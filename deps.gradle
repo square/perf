@@ -1,0 +1,22 @@
+/*
+ * This file is purely to track dependencies. The actual build is in
+ * the Makefile.
+ */
+
+apply plugin: 'java'
+// The repositories to try to read from
+repositories {
+  // Global maven
+  mavenCentral()
+}
+
+task copyDependencies(type: Copy) {
+  configurations.implementation.setCanBeResolved(true)
+  from configurations.implementation
+  into 'lib'
+}
+
+dependencies {
+  // CoreNLP -- for the argument parser.
+  implementation group: 'edu.stanford.nlp', name: 'stanford-corenlp', version: '3.9.2'
+}
