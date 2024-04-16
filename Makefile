@@ -6,7 +6,7 @@ JAVA_LIBRARY_SRC = $(shell find src/com/squareup/perfutils -type f -name "*.java
 
 # The Java files that comprise the Perf executable, which depend on the
 # libraries in `lib` and the PerfUtils library that lives at `JAVA_LIBRARY_SRC`.
-JAVA_MAIN_SRC = $(shell find src/com/squareup/perf -type f -name "*.java")
+JAVA_MAIN_SRC = $(shell find src/picocli src/com/squareup/perf -type f -name "*.java")
 
 # Set a default yet overridable max Java heap size for Gradle invocations.
 GRADLE_OPTS ?= "-Xmx4g"
