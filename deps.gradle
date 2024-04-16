@@ -17,6 +17,4 @@ task copyDependencies(type: Copy) {
 }
 
 dependencies {
-  // CoreNLP -- for the argument parser.
-  implementation group: 'edu.stanford.nlp', name: 'stanford-corenlp', version: '3.9.2'
 }

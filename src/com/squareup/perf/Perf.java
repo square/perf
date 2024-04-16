@@ -4,7 +4,7 @@
 
 package com.squareup.perf;
 
-import edu.stanford.nlp.util.ArgumentParser;
+import picocli.CommandLine;
 
 import com.squareup.perfutils.Box;
 import com.squareup.perfutils.LoggingUtils;
@@ -48,28 +48,29 @@ public class Perf {
    * class if they wish to add additional options. They can also overwrite these defaults via a
    * subclass constructor.
    */
+  @CommandLine.Command(name="perf.sh <testName>")
   static class CoreOptions {
-    @ArgumentParser.Option(name="maxOperations",
-        gloss="Maximum number of operations to invoke across all threads." +
+    @CommandLine.Option(names="-maxOperations",
+        description="Maximum number of operations to invoke across all threads." +
               " Only valid when numThreads == 1")
     public Long maxOperations = 1L;
 
-    @ArgumentParser.Option(name="maxDuration",
-        gloss="The maximum number of seconds the benchmark should run for.")
+    @CommandLine.Option(names="-maxDuration",
+        description="The maximum number of seconds the benchmark should run for.")
     public Long maxDuration = 1L;
 
-    @ArgumentParser.Option(name="numThreads",
-        gloss="The number of threads that should attempt to run the operation simultaneously.")
+    @CommandLine.Option(names="-numThreads",
+        description="The number of threads that should attempt to run the operation simultaneously.")
     public int numThreads = 1;
 
-    @ArgumentParser.Option(name="threadRange",
-        gloss="A comma-delimited set of thread ranges with optional step sizes." +
+    @CommandLine.Option(names="-threadRange",
+        description="A comma-delimited set of thread ranges with optional step sizes." +
         " Tests that support this option should ignore numThreads when it is given." +
         "Example: 1-19,20-100:10 means thread counts from 1 to 19, 20, 30,...,100")
     public String threadRange = null;
 
-    @ArgumentParser.Option(name="numWarmupOps",
-        gloss="The number of times the operation should be invoked in each thread before " +
+    @CommandLine.Option(names="-numWarmupOps",
+        description="The number of times the operation should be invoked in each thread before " +
         " the timing phase begins.")
     public long numWarmupOps = 100;
 
@@ -81,14 +82,17 @@ public class Perf {
      * 2: The output includes latency buckets and the number of operations completed in each
      *    one-second experimental interval.
      */
-    @ArgumentParser.Option(name="verbosity",
-        gloss="Control the verbosity of the output. The range of possible values is [0, 2].")
+    @CommandLine.Option(names="-verbosity",
+        description="Control the verbosity of the output. The range of possible values is [0, 2].")
     public int verbosity = 1;
 
-    @ArgumentParser.Option(name="brief",
-        gloss="Produce compact output. Synonymous with -verbosity=0. " +
+    @CommandLine.Option(names="-brief",
+        description="Produce compact output. Synonymous with -verbosity=0. " +
         "This option overrides the -verbosity option when both are given.")
     public boolean brief = false;
+
+    @CommandLine.Option(names="-help", usageHelp = true, description="Print a usage message.")
+    public boolean help;
   }
 
   /**
@@ -186,8 +190,8 @@ public class Perf {
    */
   private static void dataPointTest(String[] args) {
     class Options extends CoreOptions {
-      @ArgumentParser.Option(name="includeNanoTime",
-          gloss="True means that operation should include a call to System.nanoTime()")
+      @CommandLine.Option(names="-includeNanoTime",
+          description="True means that operation should include a call to System.nanoTime()")
           public boolean includeNanoTime = false;
       /**
        * Constructor. This is used to set default values of CoreOptions that the test function
@@ -227,8 +231,8 @@ public class Perf {
    */
   private static void longBufferTest(String[] args) {
     class Options extends CoreOptions {
-      @ArgumentParser.Option(name="includeNanoTime",
-          gloss="True means that operation should include a call to System.nanoTime()")
+      @CommandLine.Option(names="-includeNanoTime",
+          description="True means that operation should include a call to System.nanoTime()")
           public boolean includeNanoTime = false;
       /**
        * Constructor. This is used to set default values of CoreOptions that the test function
@@ -269,11 +273,11 @@ public class Perf {
    */
   private static void failureCaptureTest(String[] args) {
     class Options extends CoreOptions {
-      @ArgumentParser.Option(name="failureRate",
-          gloss="The probability of a given request failing.")
+      @CommandLine.Option(names="-failureRate",
+          description="The probability of a given request failing.")
       public Double failureRate = 1.0;
-      @ArgumentParser.Option(name="rethrowExceptions",
-          gloss="True means that this operation will rethrow exceptions to PerfUtils")
+      @CommandLine.Option(names="-rethrowExceptions",
+          description="True means that this operation will rethrow exceptions to PerfUtils")
       public boolean rethrowExceptions = false;
       /**
        * Constructor. This is used to set default values of CoreOptions that the test function
@@ -318,8 +322,8 @@ public class Perf {
    */
   public static void stringFormat(String[] args) {
     class Options extends CoreOptions {
-      @ArgumentParser.Option(name="format",
-          gloss="True means that this operation will run String.format().")
+      @CommandLine.Option(names="-format",
+          description="True means that this operation will run String.format().")
       public boolean format = true;
       /**
        * Constructor. This is used to set default values of CoreOptions that the test function
@@ -357,8 +361,8 @@ public class Perf {
    */
   public static void synchronizedTest(String[] args) {
     class Options extends CoreOptions {
-      @ArgumentParser.Option(name="format",
-          gloss="True means that this operation will run String.format().")
+      @CommandLine.Option(names="-format",
+          description="True means that this operation will run String.format().")
       public boolean format = true;
       /**
        * Constructor. This is used to set default values of CoreOptions that the test function
@@ -617,7 +621,12 @@ public class Perf {
    * @param args    The arguments to fill the options with.
    */
   static void fillOptions(CoreOptions options, String[] args) {
-    ArgumentParser.fillOptions(options, args);
+    CommandLine cli = new CommandLine(options);
+    cli.parseArgs(args);
+    if (options.help) {
+      cli.usage(System.out);
+      System.exit(0);
+    }
     if (options.brief) {
       options.verbosity = 0;
     }
@@ -646,7 +655,7 @@ public class Perf {
    *
    */
   public static void main(String[] args) {
-    if (args.length == 0) {
+    if (args.length == 0 || "-help".equals(args[0]) || "--help".equals(args[0])) {
       usage();
     }
 
