@@ -53,11 +53,11 @@ public class Perf {
     @CommandLine.Option(names="-maxOperations",
         description="Maximum number of operations to invoke across all threads." +
               " Only valid when numThreads == 1")
-    public Long maxOperations = 1L;
+    public Optional<Long> maxOperations = Optional.of(1L);
 
     @CommandLine.Option(names="-maxDuration",
         description="The maximum number of seconds the benchmark should run for.")
-    public Long maxDuration = 1L;
+    public Optional<Duration> maxDuration = Optional.of(Duration.ofSeconds(1));
 
     @CommandLine.Option(names="-numThreads",
         description="The number of threads that should attempt to run the operation simultaneously.")
@@ -91,7 +91,7 @@ public class Perf {
         "This option overrides the -verbosity option when both are given.")
     public boolean brief = false;
 
-    @CommandLine.Option(names="-help", usageHelp = true, description="Print a usage message.")
+    @CommandLine.Option(names={"-help", "--help"}, usageHelp = true, description="Print a usage message.")
     public boolean help;
   }
 
@@ -106,19 +106,15 @@ public class Perf {
        * the cli.
        */
       public Options() {
-        this.maxOperations = null;
-        this.maxDuration = 3L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(1L));
       }
     }
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          () -> PerfUtils.Status.SUCCESS, numThreads, maxOperations, maxDuration,
+          () -> PerfUtils.Status.SUCCESS, numThreads, options.maxOperations, options.maxDuration,
           options.numWarmupOps),
         options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
   }
@@ -134,16 +130,12 @@ public class Perf {
        * the cli.
        */
       public Options() {
-        this.maxOperations = null;
-        this.maxDuration = 3L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(1L));
       }
     }
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     /**
      * Simple class that wraps a status object and an Integer reference, to minimc the construction
@@ -166,7 +158,7 @@ public class Perf {
             box.set(new Pojo(PerfUtils.Status.SUCCESS, 5));
             return PerfUtils.Status.SUCCESS;
             }, options.numThreads,
-            maxOperations, maxDuration, options.numWarmupOps)
+            options.maxOperations, options.maxDuration, options.numWarmupOps)
           .toString(TimeUnit.NANOSECONDS, options.verbosity));
     }
     System.gc();
@@ -178,7 +170,7 @@ public class Perf {
             box.set(p);
             return PerfUtils.Status.SUCCESS;
             }, options.numThreads,
-            maxOperations, maxDuration, options.numWarmupOps)
+            options.maxOperations, options.maxDuration, options.numWarmupOps)
           .toString(TimeUnit.NANOSECONDS, options.verbosity));
     }
   }
@@ -199,17 +191,13 @@ public class Perf {
        * the cli.
        */
       public Options() {
-        this.maxOperations = null;
-        this.maxDuration = 3L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(3L));
         this.numThreads = 1;
       }
     }
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     System.out.println(PerfUtils.benchmarkSynchronousOperation(
           (ignoredThreadIndex) -> new ArrayList<PerfUtils.DataPoint>(),
@@ -221,7 +209,7 @@ public class Perf {
                 options.includeNanoTime ? System.nanoTime() : 1L));
           return PerfUtils.Status.SUCCESS;
         }, options.numThreads,
-        maxOperations, maxDuration, options.numWarmupOps)
+        options.maxOperations, options.maxDuration, options.numWarmupOps)
         .toString(TimeUnit.NANOSECONDS, options.verbosity));
   }
 
@@ -240,17 +228,13 @@ public class Perf {
        * the cli.
        */
       public Options() {
-        this.maxOperations = null;
-        this.maxDuration = 3L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(3L));
       }
     }
 
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     System.out.println(PerfUtils.benchmarkSynchronousOperation(
         (ignoredThreadIndex) -> new PerfUtils.LongBufferDataPointStore(),
@@ -262,7 +246,7 @@ public class Perf {
               options.includeNanoTime ? System.nanoTime() : 1L);
           return PerfUtils.Status.SUCCESS;
         }, options.numThreads,
-        maxOperations, maxDuration, options.numWarmupOps)
+        options.maxOperations, options.maxDuration, options.numWarmupOps)
         .toString(TimeUnit.NANOSECONDS, options.verbosity));
   }
 
@@ -286,17 +270,13 @@ public class Perf {
        */
       public Options() {
         this.numWarmupOps = 0;
-        this.maxOperations = null;
-        this.maxDuration = 1L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(1L));
       }
     }
 
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     System.out.println(PerfUtils.benchmarkSynchronousOperation(
         (failureBox) -> {
@@ -313,7 +293,7 @@ public class Perf {
             return PerfUtils.Status.FAILURE;
           }
         }, options.numThreads,
-        maxOperations, maxDuration, options.numWarmupOps)
+        options.maxOperations, options.maxDuration, options.numWarmupOps)
         .toString(TimeUnit.NANOSECONDS, options.verbosity));
   }
 
@@ -331,16 +311,12 @@ public class Perf {
        * the cli.
        */
       public Options() {
-        this.maxOperations = null;
-        this.maxDuration = 3L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(3L));
       }
     }
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     Function<Box<Object>, PerfUtils.Status> operation = (failureBox) -> {
       int d = ThreadLocalRandom.current().nextInt();
@@ -351,7 +327,7 @@ public class Perf {
     };
 
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          operation, numThreads, maxOperations, maxDuration,
+          operation, numThreads, options.maxOperations, options.maxDuration,
           options.numWarmupOps),
         options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
   }
@@ -370,16 +346,12 @@ public class Perf {
        * the cli.
        */
       public Options() {
-        this.maxOperations = null;
-        this.maxDuration = 3L;
+        this.maxOperations = Optional.empty();
+        this.maxDuration = Optional.of(Duration.ofSeconds(3L));
       }
     }
     Options options = new Options();
     fillOptions(options, args);
-    // Work around the lack of Optional support in ArgumentParser.
-    Optional<Duration> maxDuration = Optional.ofNullable(options.maxDuration)
-        .map(Duration::ofSeconds);
-    Optional<Long> maxOperations = Optional.ofNullable(options.maxOperations);
 
     final Box<Integer> vanillaInteger = new Box<Integer>(0);
     Function<Box<Object>, PerfUtils.Status> synchronizedOperation = (failureBox) -> {
@@ -398,14 +370,14 @@ public class Perf {
     // Run operation with synchronized
     System.out.println("Assign to a plain Integer inside a synchronized block.");
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          synchronizedOperation, numThreads, maxOperations, maxDuration,
+          synchronizedOperation, numThreads, options.maxOperations, options.maxDuration,
           options.numWarmupOps),
         options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
 
     // Run operation with atomics.
     System.out.println("Assign to an atomic integer.");
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          atomicOperation, numThreads, maxOperations, maxDuration,
+          atomicOperation, numThreads, options.maxOperations, options.maxDuration,
           options.numWarmupOps),
         options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
   }
@@ -622,6 +594,29 @@ public class Perf {
    */
   static void fillOptions(CoreOptions options, String[] args) {
     CommandLine cli = new CommandLine(options);
+
+    // Register a custom converter for parsing Durations, because most humans
+    // will not know that they need to type strings prefixed with PT. Also,
+    // defaulting to seconds as units is convenient.
+    cli.registerConverter(Duration.class, s -> {
+      s = s.toUpperCase();
+      // The person is attempting to use ISO-8601 duration format.
+      if (s.startsWith("PT")) {
+        return Duration.parse(s);
+      }
+
+      // If the entire string is numeric, then assume seconds.
+      try {
+        Double.parseDouble(s);
+        return Duration.parse("PT" + s + "S");
+      } catch (NumberFormatException e) {
+        // If the entire string is NOT numeric, then assume the number format
+        // is the ISO-8601 format without the prefix, limited to hours, minutes
+        // and seconds.
+        return Duration.parse("PT" + s);
+      }
+    });
+
     cli.parseArgs(args);
     if (options.help) {
       cli.usage(System.out);
