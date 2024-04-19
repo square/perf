@@ -600,6 +600,9 @@ public class Perf {
     // defaulting to seconds as units is convenient.
     cli.registerConverter(Duration.class, s -> {
       s = s.toUpperCase();
+      if ("NULL".equals(s) || "OPTIONAL.EMPTY".equals(s)) {
+        return null;
+      }
       // The person is attempting to use ISO-8601 duration format.
       if (s.startsWith("PT")) {
         return Duration.parse(s);
@@ -616,6 +619,14 @@ public class Perf {
         return Duration.parse("PT" + s);
       }
     });
+
+    CommandLine.ITypeConverter<Long> nullParsingLongConverter = (String s) -> {
+      s = s.toUpperCase();
+      return ("NULL".equals(s) || "OPTIONAL.EMPTY".equals(s)) ? null : Long.parseLong(s);
+    };
+
+    cli.registerConverter(Long.TYPE, nullParsingLongConverter);
+    cli.registerConverter(Long.class, nullParsingLongConverter);
 
     cli.parseArgs(args);
     if (options.help) {
