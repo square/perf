@@ -628,6 +628,10 @@ public class Perf {
     cli.registerConverter(Long.TYPE, nullParsingLongConverter);
     cli.registerConverter(Long.class, nullParsingLongConverter);
 
+    // Allow subsequent options to replace earlier options without warnings.
+    cli.setOverwrittenOptionsAllowed(true);
+    CommandLine.tracer().setLevel(CommandLine.TraceLevel.OFF);
+
     cli.parseArgs(args);
     if (options.help) {
       cli.usage(System.out);
