@@ -441,6 +441,10 @@ public class Perf {
     new TestInfo("Synchronized", Perf::synchronizedTest, null,
         "Benchmark of assigning to an integer inside a synchronized block vs assigning to " +
         "an atomic integer."),
+    // This test is used for validating that the argument overrides in TestInfo is working as expected.
+    new TestInfo("NoOpThroughputShortDuration", Perf::noopTest,
+        new String[] {"-numThreads", "2", "-maxDuration", "0.5" },
+        "Benchmark of this benchmarking library and Java overheads."),
   };
 
   /**
