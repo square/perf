@@ -461,9 +461,9 @@ public class Perf {
     StringBuilder help = new StringBuilder();
     help.append("Usage:");
     help.append(
-        "\n\tjava com.squareup.conversations.messenger.perftests.Perf <testName> [testOptions]");
+        "\n\t./perf.sh <testName> [testOptions]");
     help.append(
-        "\n\tjava com.squareup.conversations.messenger.perftests.Perf <testName>,<testName>,...");
+        "\n\t./perf.sh <testName>,<testName>,...");
     help.append(
         "\nEach test has its own options, which can be retrieved with `<testName> --help`.");
     help.append("\nAvailable tests:");
