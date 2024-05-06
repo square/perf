@@ -115,8 +115,7 @@ public class Perf {
 
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
           () -> PerfUtils.Status.SUCCESS, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps),
-        options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
+          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -328,8 +327,7 @@ public class Perf {
 
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
           operation, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps),
-        options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
+          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -371,15 +369,13 @@ public class Perf {
     System.out.println("Assign to a plain Integer inside a synchronized block.");
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
           synchronizedOperation, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps),
-        options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
+          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
 
     // Run operation with atomics.
     System.out.println("Assign to an atomic integer.");
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
           atomicOperation, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps),
-        options.threadRange, options.numThreads, TimeUnit.NANOSECONDS, options.verbosity);
+          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -504,7 +500,7 @@ public class Perf {
    * This function exists for two reasons:
    * 1. To centralize the set of fields that are output during thread range scans in one place.
    * 2. To reduce the amount of boilerplate required for perf functions that want to support both
-   *    the threadRange option is the numThreads option.
+   *    the threadRange option and the numThreads option.
    *
    * It lives here and not in PerfUtils because it is opinionated about both which fields to print
    * and when to terminate, both of which are likely to be different for different consumers of
@@ -512,17 +508,17 @@ public class Perf {
    *
    * @param benchmarkWithThread A function that takes a thread count as input and produces a
    *                            PerfReport.
-   * @param threadRange         A string representation of a range of threads. (e.g. 1-3,10-20)
-   * @param numThreads          The number of threads to run with, when threadRange is null, empty,
-   *                            or whitespace.
+   * @param options             The flags that were parsed from the command line. This function uses
+   *                            a combination of the flags to determine what mode to run the
+   *                            benchmark in.
    * @param displayTimeUnit     The time unit that should be used for displaying latencies.
-   * @param verbosity           See {@link CoreOptions#verbosity}.
    */
   static void runBenchmark(Function<Integer, PerfUtils.PerfReport> benchmarkWithThread,
-      String threadRange, int numThreads, TimeUnit displayTimeUnit, int verbosity) {
+      CoreOptions options, TimeUnit displayTimeUnit) {
+    String threadRange = options.threadRange;
     if (threadRange == null || threadRange.trim().isEmpty()) {
-      System.out.println(benchmarkWithThread.apply(numThreads)
-          .toString(displayTimeUnit, verbosity));
+      System.out.println(benchmarkWithThread.apply(options.numThreads)
+          .toString(displayTimeUnit, options.verbosity));
     } else {
       List<Integer> threadCounts = PerfUtils.parseRanges(threadRange);
       System.out.println(
