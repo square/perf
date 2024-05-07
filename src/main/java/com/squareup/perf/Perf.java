@@ -593,7 +593,7 @@ public class Perf {
   }
 
   /**
-   * A wrapper around {@link ArgumentParser#fillOptions(Class, String...)} that makes any necessary
+   * A wrapper around {@link CommandLine#parseArgs} that makes any necessary
    * overrides for related flags. The current overrides are:
    * 1. Specifying -brief sets -verbosity to 0.
    *
