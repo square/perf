@@ -50,6 +50,12 @@ public class Perf {
    */
   @CommandLine.Command(name="perf.sh <testName>")
   static class CoreOptions {
+    @CommandLine.Option(names="-continuous",
+      description="When set, run the specified test as an infinite loop. " +
+      "When used without threadRange, write results to stdout whenever maxOperations or " +
+      "maxDuration is reached. Do not use in load tests that invoke runBenchmark multiple times.")
+    public boolean continuous = false;
+
     @CommandLine.Option(names="-maxOperations",
         description="Maximum number of operations to invoke across all threads." +
               " Only valid when numThreads == 1")
@@ -515,39 +521,41 @@ public class Perf {
    */
   static void runBenchmark(Function<Integer, PerfUtils.PerfReport> benchmarkWithThread,
       CoreOptions options, TimeUnit displayTimeUnit) {
-    String threadRange = options.threadRange;
-    if (threadRange == null || threadRange.trim().isEmpty()) {
-      System.out.println(benchmarkWithThread.apply(options.numThreads)
-          .toString(displayTimeUnit, options.verbosity));
-    } else {
-      List<Integer> threadCounts = PerfUtils.parseRanges(threadRange);
-      System.out.println(
-          "Threads,Min,Avg,P50,P99,P999,P9999,Max,Throughput,Completed Requests,Errors,Started Requests");
-      // Variable is named threadCount instead of numThreads because numThreads is used for the
-      // parameter.
-      for (Integer threadCount: threadCounts) {
-        PerfUtils.PerfReport perfReport = benchmarkWithThread.apply(threadCount);
-        System.out.printf("%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
-            threadCount,
-            displayTimeUnit.convert(perfReport.minLatency),
-            displayTimeUnit.convert(perfReport.averageLatency),
-            displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.5)),
-            displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.99)),
-            displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.999)),
-            displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.9999)),
-            displayTimeUnit.convert(perfReport.maxLatency),
-            perfReport.averageOperationsCompletedPerSecond,
-            perfReport.operationsCompletedBeforeDeadline,
-            perfReport.operationsFailed,
-            perfReport.operationsStarted);
-        // This is a condition for termination chosen somewhat arbitrarily
-        // based on experimentation.
-        if (perfReport.operationsFailed > 50) {
-          System.out.println("Terminating experiment early due operationsFailed > 50");
-          break;
+    do {
+      String threadRange = options.threadRange;
+      if (threadRange == null || threadRange.trim().isEmpty()) {
+        System.out.println(benchmarkWithThread.apply(options.numThreads)
+            .toString(displayTimeUnit, options.verbosity));
+      } else {
+        List<Integer> threadCounts = PerfUtils.parseRanges(threadRange);
+        System.out.println(
+            "Threads,Min,Avg,P50,P99,P999,P9999,Max,Throughput,Completed Requests,Errors,Started Requests");
+        // Variable is named threadCount instead of numThreads because numThreads is used for the
+        // parameter.
+        for (Integer threadCount: threadCounts) {
+          PerfUtils.PerfReport perfReport = benchmarkWithThread.apply(threadCount);
+          System.out.printf("%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+              threadCount,
+              displayTimeUnit.convert(perfReport.minLatency),
+              displayTimeUnit.convert(perfReport.averageLatency),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.5)),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.99)),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.999)),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.9999)),
+              displayTimeUnit.convert(perfReport.maxLatency),
+              perfReport.averageOperationsCompletedPerSecond,
+              perfReport.operationsCompletedBeforeDeadline,
+              perfReport.operationsFailed,
+              perfReport.operationsStarted);
+          // This is a condition for termination chosen somewhat arbitrarily
+          // based on experimentation.
+          if (perfReport.operationsFailed > 50) {
+            System.out.println("Terminating experiment early due operationsFailed > 50");
+            break;
+          }
         }
       }
-    }
+    } while(options.continuous);
   }
 
   /**
