@@ -43,6 +43,72 @@ import java.util.stream.Stream;
 public class Perf {
 
   /**
+   * The following class and table define available performance tests in terms of a string name, a
+   * method that implements the test, and a set of default arguments to pass to that method.
+   */
+  private static class TestInfo {
+    /**
+     * The name of the test, passed on the command line to identify the test. This name is not
+     * permitted to contain commas, which are used to delineate different tests.
+     */
+    public String name;
+
+    /**
+     * The main function for the test. It is responsible for parsing arguments and printing help as
+     * well as executing and producing any output. The `String[]` that it consumes is a
+     * concatenation of defaultArgs and the arguments the user gave on the command line.
+     */
+    public Consumer<String[]> testMethod;
+
+    /**
+     * The set of default arguments to pass to the test. Any command line options will be appended
+     * after (and can overwrite) this set of arguments.
+     */
+    public String[] defaultArgs;
+
+    /**
+     * The human-readable description for the test.
+     */
+    public String description;
+
+    /**
+     * Constructor.
+     */
+    public TestInfo(
+        String name, Consumer<String[]> testMethod, String[] defaultArgs,  String description) {
+      this.name = name;
+      this.testMethod = testMethod;
+      this.defaultArgs = defaultArgs;
+      this.description = description;
+    }
+  }
+
+  /**
+   * List of available tests.  We are using this array because it is both more
+   * explicit and more flexible than putting annotations on test functions.
+   *
+   * Test names must be unique and are case-sensitive.
+   */
+  private static TestInfo tests[]  = new TestInfo[] {
+    new TestInfo("NoOp", Perf::noopTest, new String[] {"-maxOperations", "null", "-maxDuration", "1"},
+        "Benchmark of this benchmarking library and Java overheads."),
+    new TestInfo("New", Perf::newTest, new String[] {"-maxOperations", "null", "-maxDuration", "1"},
+        "Benchmark of simple object construction."),
+    new TestInfo("DataPoint", Perf::dataPointTest, null,
+        "Benchmark of creating and adding DataPoints to an ArrayList."),
+    new TestInfo("LongBuffer", Perf::longBufferTest, null,
+        "Benchmark of storing pairs of longs in a set of LongBuffers."),
+    new TestInfo("StringFormat", Perf::stringFormat, null,
+        "Benchmark of String.format."),
+    new TestInfo("Synchronized", Perf::synchronizedTest, null,
+        "Benchmark of assigning to an integer inside a synchronized block vs assigning to " +
+        "an atomic integer."),
+    // This test is used for validating that the argument overrides in TestInfo is working as expected.
+    new TestInfo("NoOpThroughputShortDuration", Perf::noopTest,
+        new String[] {"-numThreads", "2", "-maxDuration", "0.5" },
+        "Benchmark of this benchmarking library and Java overheads."),
+  };
+  /**
    * Options that will be useful for most of the performance tests, because they will use
    * PerfUtils.benchmarkSynchronousOperation. Individual tests are expected to inherit from this
    * class if they wish to add additional options. They can also overwrite these defaults via a
@@ -105,18 +171,7 @@ public class Perf {
    * Benchmark the latency introduced by the testing library itself.
    */
   private static void noopTest(String[] args) {
-    class Options extends CoreOptions {
-      /**
-       * Constructor. This is used to set default values of CoreOptions that the test function
-       * prefers in the absense of an override. These are overridable via TestInfo defaultArgs and
-       * the cli.
-       */
-      public Options() {
-        this.maxOperations = Optional.empty();
-        this.maxDuration = Optional.of(Duration.ofSeconds(1L));
-      }
-    }
-    Options options = new Options();
+    CoreOptions options = new CoreOptions();
     fillOptions(options, args);
 
     runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
@@ -128,22 +183,11 @@ public class Perf {
    * Benchmark the latency of constructing a simple object in Java with `new`.
    */
   private static void newTest(String[] args) {
-    class Options extends CoreOptions {
-      /**
-       * Constructor. This is used to set default values of CoreOptions that the test function
-       * prefers in the absense of an override. These are overridable via TestInfo defaultArgs and
-       * the cli.
-       */
-      public Options() {
-        this.maxOperations = Optional.empty();
-        this.maxDuration = Optional.of(Duration.ofSeconds(1L));
-      }
-    }
-    Options options = new Options();
+    CoreOptions options = new CoreOptions();
     fillOptions(options, args);
 
     /**
-     * Simple class that wraps a status object and an Integer reference, to minimc the construction
+     * Simple class that wraps a status object and an Integer reference, to minic the construction
      * of a wrapper object if the signature of `operation` returned a wrapper instead of just a
      * status.
      */
@@ -384,70 +428,6 @@ public class Perf {
           options.numWarmupOps), options, TimeUnit.NANOSECONDS);
   }
 
-  /**
-   * The following class and table define available performance tests in terms of a string name, a
-   * method that implements the test, and a set of default arguments to pass to that method.
-   */
-  private static class TestInfo {
-    /**
-     * The name of the test, passed on the command line to identify the test. This name is not
-     * permitted to contain commas, which are used to delineate different tests.
-     */
-    public String name;
-
-    /**
-     * The main function for the test. It is responsible for parsing arguments and printing help as
-     * well as executing and producing any output. The `String[]` that it consumes is a
-     * concatenation of defaultArgs and the arguments the user gave on the command line.
-     */
-    public Consumer<String[]> testMethod;
-
-    /**
-     * The set of default arguments to pass to the test. Any command line options will be appended
-     * after (and can overwrite) this set of arguments.
-     */
-    public String[] defaultArgs;
-
-    /**
-     * The human-readable description for the test.
-     */
-    public String description;
-
-    /**
-     * Constructor.
-     */
-    public TestInfo(
-        String name, Consumer<String[]> testMethod, String[] defaultArgs,  String description) {
-      this.name = name;
-      this.testMethod = testMethod;
-      this.defaultArgs = defaultArgs;
-      this.description = description;
-    }
-  }
-
-  /**
-   * List of available tests.  We are using this array because it is both more
-   * explicit and more flexible than putting annotations on test functions.
-   *
-   * Test names must be unique and are case-sensitive.
-   */
-  private static TestInfo tests[]  = new TestInfo[] {
-    new TestInfo("NoOp", Perf::noopTest, null, "Benchmark of this benchmarking library and Java overheads."),
-    new TestInfo("New", Perf::newTest, null, "Benchmark of simple object construction."),
-    new TestInfo("DataPoint", Perf::dataPointTest, null,
-        "Benchmark of creating and adding DataPoints to an ArrayList."),
-    new TestInfo("LongBuffer", Perf::longBufferTest, null,
-        "Benchmark of storing pairs of longs in a set of LongBuffers."),
-    new TestInfo("StringFormat", Perf::stringFormat, null,
-        "Benchmark of String.format."),
-    new TestInfo("Synchronized", Perf::synchronizedTest, null,
-        "Benchmark of assigning to an integer inside a synchronized block vs assigning to " +
-        "an atomic integer."),
-    // This test is used for validating that the argument overrides in TestInfo is working as expected.
-    new TestInfo("NoOpThroughputShortDuration", Perf::noopTest,
-        new String[] {"-numThreads", "2", "-maxDuration", "0.5" },
-        "Benchmark of this benchmarking library and Java overheads."),
-  };
 
   /**
    * A convenience mapping from test names to TestInfo objects. Given how few tests there are, it is
