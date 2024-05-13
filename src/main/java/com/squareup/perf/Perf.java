@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -133,7 +134,7 @@ public class Perf {
 
     @CommandLine.Option(names="-numThreads",
         description="The number of threads that should attempt to run the operation simultaneously.")
-    public int numThreads = 1;
+    public Optional<Integer> numThreads = Optional.of(1);
 
     @CommandLine.Option(names="-threadRange",
         description="A comma-delimited set of thread ranges with optional step sizes." +
@@ -173,10 +174,7 @@ public class Perf {
   private static void noopTest(String[] args) {
     CoreOptions options = new CoreOptions();
     fillOptions(options, args);
-
-    runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          () -> PerfUtils.Status.SUCCESS, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
+    runBenchmark(() -> PerfUtils.Status.SUCCESS, options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -202,25 +200,19 @@ public class Perf {
 
     {
       System.out.println("Assignment with new:");
-      System.out.println(
-          PerfUtils.benchmarkSynchronousOperation((box) -> {
+      runBenchmark((box) -> {
             box.set(new Pojo(PerfUtils.Status.SUCCESS, 5));
             return PerfUtils.Status.SUCCESS;
-            }, options.numThreads,
-            options.maxOperations, options.maxDuration, options.numWarmupOps)
-          .toString(TimeUnit.NANOSECONDS, options.verbosity));
+          }, options, TimeUnit.NANOSECONDS);
     }
     System.gc();
     {
       System.out.println("Assignment without new:");
       final Pojo p = new Pojo(PerfUtils.Status.SUCCESS, 5);
-      System.out.println(
-          PerfUtils.benchmarkSynchronousOperation((box) -> {
+      runBenchmark((box) -> {
             box.set(p);
             return PerfUtils.Status.SUCCESS;
-            }, options.numThreads,
-            options.maxOperations, options.maxDuration, options.numWarmupOps)
-          .toString(TimeUnit.NANOSECONDS, options.verbosity));
+          }, options, TimeUnit.NANOSECONDS);
     }
   }
 
@@ -242,24 +234,23 @@ public class Perf {
       public Options() {
         this.maxOperations = Optional.empty();
         this.maxDuration = Optional.of(Duration.ofSeconds(3L));
-        this.numThreads = 1;
+        this.numThreads = Optional.of(1);
       }
     }
     Options options = new Options();
     fillOptions(options, args);
 
-    System.out.println(PerfUtils.benchmarkSynchronousOperation(
-          (ignoredThreadIndex) -> new ArrayList<PerfUtils.DataPoint>(),
-          (threadSpecificCustomData) -> {
+    PerfUtils.PerfArguments perfArgs = new PerfUtils.PerfArguments()
+        .setThreadInit(() -> new ArrayList<PerfUtils.DataPoint>())
+        .setOperationUsingThreadInit((threadSpecificCustomData) -> {
           List<PerfUtils.DataPoint> dataPoints =
               (List<PerfUtils.DataPoint>) threadSpecificCustomData;
           dataPoints.add(new PerfUtils.DataPoint(
                 options.includeNanoTime ? System.nanoTime() : 1L,
                 options.includeNanoTime ? System.nanoTime() : 1L));
           return PerfUtils.Status.SUCCESS;
-        }, options.numThreads,
-        options.maxOperations, options.maxDuration, options.numWarmupOps)
-        .toString(TimeUnit.NANOSECONDS, options.verbosity));
+        });
+    runBenchmark(perfArgs, options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -285,18 +276,17 @@ public class Perf {
     Options options = new Options();
     fillOptions(options, args);
 
-    System.out.println(PerfUtils.benchmarkSynchronousOperation(
-        (ignoredThreadIndex) -> new PerfUtils.LongBufferDataPointStore(),
-        (threadSpecificCustomData) -> {
+    PerfUtils.PerfArguments perfArgs = new PerfUtils.PerfArguments()
+        .setThreadInit(() -> new PerfUtils.LongBufferDataPointStore())
+        .setOperationUsingThreadInit((threadSpecificCustomData) -> {
           PerfUtils.LongBufferDataPointStore dataPoints =
               (PerfUtils.LongBufferDataPointStore) threadSpecificCustomData;
           dataPoints.add(
               options.includeNanoTime ? System.nanoTime() : 1L,
               options.includeNanoTime ? System.nanoTime() : 1L);
           return PerfUtils.Status.SUCCESS;
-        }, options.numThreads,
-        options.maxOperations, options.maxDuration, options.numWarmupOps)
-        .toString(TimeUnit.NANOSECONDS, options.verbosity));
+        });
+    runBenchmark(perfArgs, options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -327,23 +317,20 @@ public class Perf {
     Options options = new Options();
     fillOptions(options, args);
 
-    System.out.println(PerfUtils.benchmarkSynchronousOperation(
-        (failureBox) -> {
-          try {
-            if (ThreadLocalRandom.current().nextDouble() < options.failureRate) {
-              throw new RuntimeException("Handcrafted exception");
-            }
-            return PerfUtils.Status.SUCCESS;
-          } catch (RuntimeException e) {
-            if (options.rethrowExceptions) {
-              throw e;
-            }
-            failureBox.set(LoggingUtils.getStackTrace(e));
-            return PerfUtils.Status.FAILURE;
+    runBenchmark((failureBox) -> {
+        try {
+          if (ThreadLocalRandom.current().nextDouble() < options.failureRate) {
+            throw new RuntimeException("Handcrafted exception");
           }
-        }, options.numThreads,
-        options.maxOperations, options.maxDuration, options.numWarmupOps)
-        .toString(TimeUnit.NANOSECONDS, options.verbosity));
+          return PerfUtils.Status.SUCCESS;
+        } catch (RuntimeException e) {
+          if (options.rethrowExceptions) {
+            throw e;
+          }
+          failureBox.set(LoggingUtils.getStackTrace(e));
+          return PerfUtils.Status.FAILURE;
+        }
+      }, options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -375,9 +362,7 @@ public class Perf {
       return PerfUtils.Status.SUCCESS;
     };
 
-    runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          operation, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
+    runBenchmark(operation, options, TimeUnit.NANOSECONDS);
   }
 
   /**
@@ -417,15 +402,11 @@ public class Perf {
 
     // Run operation with synchronized
     System.out.println("Assign to a plain Integer inside a synchronized block.");
-    runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          synchronizedOperation, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
+    runBenchmark(synchronizedOperation, options, TimeUnit.NANOSECONDS);
 
     // Run operation with atomics.
     System.out.println("Assign to an atomic integer.");
-    runBenchmark((numThreads) -> PerfUtils.benchmarkSynchronousOperation(
-          atomicOperation, numThreads, options.maxOperations, options.maxDuration,
-          options.numWarmupOps), options, TimeUnit.NANOSECONDS);
+    runBenchmark(atomicOperation, options, TimeUnit.NANOSECONDS);
   }
 
 
@@ -479,32 +460,63 @@ public class Perf {
   }
 
   /**
+   * Helper function for running benchmarks that takes simple operations which
+   * do not return error distributions.
+   */
+  static void runBenchmark(Supplier<PerfUtils.Status> operation, CoreOptions options,
+      TimeUnit displayTimeUnit) {
+    runBenchmark(new PerfUtils.PerfArguments().setOperation(operation), options, displayTimeUnit);
+  }
+
+  /**
+   * Helper function for running benchmarks that takes operations which return
+   * error distributions but do not require custom thread initiation.
+   */
+  static void runBenchmark(Function<Box<Object>, PerfUtils.Status> operation, CoreOptions options,
+      TimeUnit displayTimeUnit) {
+    runBenchmark(new PerfUtils.PerfArguments().setOperation(operation), options, displayTimeUnit);
+  }
+
+  /**
    * Helper function to run a benchmark either for a single thread count or a range of thread
-   * counts. Detailed output is printed for the former, while summary output is printed for the
-   * latter.
+   * counts, based on the given options. This variation of runBenchmark should be used if a test
+   * needs to use a custom threadInit function. The other variations are simpler to use and do not
+   * require the caller to wrap their operation in args.
    *
    * This function exists for two reasons:
-   * 1. To centralize the set of fields that are output during thread range scans in one place.
-   * 2. To reduce the amount of boilerplate required for perf functions that want to support both
-   *    the threadRange option and the numThreads option.
+   * 1. To centralize the processing of CoreOptions, some of which are interpreted in this function,
+   *    and some of which are passed into PerfUtils.benchmarkSynchronousOperation the threadRange
+   *    option and the numThreads option.
+   * 2. To centralize the set of fields that are output during thread range scans in one place.
    *
-   * It lives here and not in PerfUtils because it is opinionated about both which fields to print
-   * and when to terminate, both of which are likely to be different for different consumers of
-   * PerfUtils.
-   *
-   * @param benchmarkWithThread A function that takes a thread count as input and produces a
-   *                            PerfReport.
-   * @param options             The flags that were parsed from the command line. This function uses
-   *                            a combination of the flags to determine what mode to run the
-   *                            benchmark in.
-   * @param displayTimeUnit     The time unit that should be used for displaying latencies.
+   * @param args             Incomplete arguments for PerfUtils.benchmarkSynchronousOperation, with
+   *                         #operation and optionally #threadInit set. All other arguments will be
+   *                         set based based on the fields in options.
+   * 
+   * @param options          The flags that were parsed from the command line. This function uses
+   *                         a some of the flags to determine what mode to run the
+   *                         benchmark in, and passes others into args.
+   * @param displayTimeUnit  The time unit that should be used for displaying latencies.
    */
-  static void runBenchmark(Function<Integer, PerfUtils.PerfReport> benchmarkWithThread,
-      CoreOptions options, TimeUnit displayTimeUnit) {
+  static void runBenchmark(PerfUtils.PerfArguments args, CoreOptions options, TimeUnit displayTimeUnit) {
+    // Construct args from options, so that each test does not need to do it.
+    // This block can be extracted into a separate method if there are tests
+    // that do not want to use the runBenchmark wrapper.
+    if (args.operation == null) {
+      System.err.println("ERROR: runBenchmark called with null operation.");
+      System.exit(1);
+    }
+    args
+      .setNumThreads(options.numThreads)
+      .setMaxOperations(options.maxOperations)
+      .setMaxDuration(options.maxDuration)
+      .setNumWarmupOps(options.numWarmupOps);
+
+    // Run the actual benchmark.
     do {
       String threadRange = options.threadRange;
       if (threadRange == null || threadRange.trim().isEmpty()) {
-        System.out.println(benchmarkWithThread.apply(options.numThreads)
+        System.out.println(PerfUtils.benchmarkSynchronousOperation(args)
             .toString(displayTimeUnit, options.verbosity));
       } else {
         List<Integer> threadCounts = PerfUtils.parseRanges(threadRange);
@@ -513,7 +525,8 @@ public class Perf {
         // Variable is named threadCount instead of numThreads because numThreads is used for the
         // parameter.
         for (Integer threadCount: threadCounts) {
-          PerfUtils.PerfReport perfReport = benchmarkWithThread.apply(threadCount);
+          PerfUtils.PerfReport perfReport =
+              PerfUtils.benchmarkSynchronousOperation(args.setNumThreads(Optional.of(threadCount)));
           System.out.printf("%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
               threadCount,
               displayTimeUnit.convert(perfReport.minLatency),

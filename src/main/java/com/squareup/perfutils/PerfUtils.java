@@ -27,6 +27,173 @@ import java.util.function.Supplier;
  */
 public class PerfUtils {
   /**
+   * This class wraps arguments to benchmarkSynchronousOperation; it exists to remove the need for
+   * multiple variations of benchmarkSynchronousOperation with different sets of arguments.
+   *
+   * Fields of this object should be set using the setX() functions.
+   */
+  public static class PerfArguments {
+    /**
+     * A function used for initializing per-thread state for the benchmark. This function takes the
+     * thread index of the worker thread as an argument and returns an object representing
+     * test-specific data. The return value of this function will be passed into `operation` as the
+     * first argument.
+     */
+    public Function<Integer, Object> threadInit;
+
+    /**
+     * The function that we want the performance of. When a custom error distribution is desired,
+     * `operation` should put a hashable object representing the failed state into its
+     * {@literal Box<Object>} argument. Always required.
+     */
+    public BiFunction<Object, Box<Object>, Status> operation;
+
+    /**
+     * The number of threads that will be concurrently attempting to run the operation as quickly as
+     * possible. Required iff targetOpsPerSecond is empty, ignored otherwise.
+     */
+    public Optional<Integer> numThreads;
+
+    /**
+     * The benchmark will not run the operation more than this number of times across all threads.
+     * An empty value will be treated as infinite.
+     */
+    public Optional<Long> maxOperations;
+
+    /**
+     * Maximum length of time to run for. An empty value will be treated as infinite.
+     */
+    public Optional<Duration> maxDuration;
+
+    /**
+     * The number of operations that each thread performs before synchronizing
+     * with each other and starting measurement.
+     */
+    public long numWarmupOps;
+
+    /**
+     * The number of operations that Perf will attempt to invoke each second, using a maximum of
+     * maxThreads.
+     */
+    public Optional<Double> targetOpsPerSecond;
+
+    /**
+     * The maximum number of threads that can be used to attempt to reach targetOpsPerSecond.
+     * This is required iff targetOpsPerSecond is non-empty, to put an upper bound on resources.
+     */
+    public Optional<Integer> maxThreads;
+
+    /**
+     * Constructor. Sets default values for all arguments. Required arguments are intentionally set
+     * to an invalid state.
+     */
+    public PerfArguments() {
+      this.threadInit = (ignoredThreadIndex) -> new Object();
+      this.operation = null;
+      this.numThreads = Optional.empty();
+      this.maxOperations = Optional.empty();
+      this.numWarmupOps = -1;
+      this.targetOpsPerSecond = Optional.empty();
+      this.maxThreads = Optional.empty();
+    }
+
+    /**
+     * Setter for threadInit.
+     */
+    public PerfArguments setThreadInit(Function<Integer, Object> threadInit) {
+      this.threadInit = threadInit;
+      return this;
+    }
+
+    /**
+     * Setter for threadInit that does not take a thread index.
+     */
+    public PerfArguments setThreadInit(Supplier<Object> threadInit) {
+      this.threadInit = (ignoredThreadIndex) -> threadInit.get();
+      return this;
+    }
+
+    /**
+     * Setter for operation that performs no transformations.
+     */
+    public PerfArguments setOperation(BiFunction<Object, Box<Object>, Status> operation) {
+      this.operation = operation;
+      return this;
+    }
+
+    /**
+     * Setter for operation that wraps a Function<Object, Status> operation. This function is named
+     * differently to avoid a conflict with the variation that takes a Box and does not use
+     * threadInit data, because this function is expected to be less frequently used.
+     */
+    public PerfArguments setOperationUsingThreadInit(Function<Object, Status> operation) {
+      return setOperation((threadSpecificCustomData, ignoredBox) -> operation.apply(threadSpecificCustomData));
+    }
+
+    /**
+     * Setter for operation that wraps a Function<Box<Object>, Status> operation.
+     */
+    public PerfArguments setOperation(Function<Box<Object>, Status> operation) {
+      return setOperation((ignoredThreadSpecificCustomData, box) -> operation.apply(box));
+    }
+
+    /**
+     * Setter for operation that wraps a Supplier<Status> operation.
+     */
+    public PerfArguments setOperation(Supplier<Status> operation) {
+      return setOperation((threadSpecificCustomData, ignoredBox) -> operation.get());
+    }
+
+    /**
+     * Setter for numThreads.
+     */
+    public PerfArguments setNumThreads(Optional<Integer> numThreads) {
+      this.numThreads = numThreads;
+      return this;
+    }
+
+    /**
+     * Setter for maxOperations.
+     */
+    public PerfArguments setMaxOperations(Optional<Long> maxOperations) {
+      this.maxOperations = maxOperations;
+      return this;
+    }
+
+    /**
+     * Setter for maxDuration.
+     */
+    public PerfArguments setMaxDuration(Optional<Duration> maxDuration) {
+      this.maxDuration = maxDuration;
+      return this;
+    }
+
+    /**
+     * Setter for numWarmupOps.
+     */
+    public PerfArguments setNumWarmupOps(long numWarmupOps) {
+      this.numWarmupOps = numWarmupOps;
+      return this;
+    }
+
+    /**
+     * Setter for targetOpsPerSecond.
+     */
+    public PerfArguments setTargetOpsPerSecond(Optional<Double> targetOpsPerSecond) {
+      this.targetOpsPerSecond = targetOpsPerSecond;
+      return this;
+    }
+
+    /**
+     * Setter for maxThreads.
+     */
+    public PerfArguments setMaxThreads (Optional<Integer> maxThreads) {
+      this.maxThreads = maxThreads;
+      return this;
+    }
+  }
+
+  /**
    * Latency, throughput, completion, and error data resulting from running a performance benchmark
    * once.
    *
@@ -1094,32 +1261,17 @@ public class PerfUtils {
    * we require a wrapper, the operation would then have to pay the additional cost of constructing
    * the wrapper as well.
    *
-   * @param threadInit    A function used for initializing per-thread state for the benchmark. This
-   *                      function takes the thread index of the worker thread as an argument and
-   *                      returns an object representing test-specific data. The return value of
-   *                      this function will be passed into `operation` as the first argument.
-   * @param operation     The function that we want the performance of. When a custom error
-   *                      distribution is desired, `operation` should put a hashable object
-   *                      representing the failed state into its {@literal Box<Object>} argument.
-   * @param numThreads    The number of threads that will be concurrently attempting to run the
-   *                      operation as quickly as possible.
-   * @param maxOperations The benchmark will not run the operation more than this number of times
-   *                      across all threads. An empty value will be treated as infinite.
-   * @param maxDuration   Maximum length of time to run for. An empty value will be treated as
-   *                      infinite.
-   * @param numWarmupOps  The number of operations that each thread performs before synchronizing
-   *                      with each other and starting measurement.
+   * @param args  An object wrapping required and optional arguments; used to
+   *              avoid the need to modify callers or increase the variations
+   *              of this method when new options are added.
    *
    * @return A PerfReport containing information about latency, throughput and errors.
    */
-  public static PerfReport benchmarkSynchronousOperation(
-      Function<Integer, Object> threadInit,
-      BiFunction<Object, Box<Object>, Status> operation,
-      int numThreads,
-      Optional<Long> maxOperations,
-      Optional<Duration> maxDuration,
-      long numWarmupOps) {
-
+  public static PerfReport benchmarkSynchronousOperation(PerfArguments args) {
+    // Unpack frequently referenced args into local variables for convenience.
+    int numThreads = args.numThreads.get();
+    Optional<Long> maxOperations = args.maxOperations;
+    Optional<Duration> maxDuration = args.maxDuration;
     // Require at least one of maxOperations and maxDuration.
     if ((maxOperations.isEmpty() || maxOperations.get() == 0) &&
         (maxDuration.isEmpty() || maxDuration.get().equals(Duration.ZERO))) {
@@ -1145,8 +1297,8 @@ public class PerfUtils {
     Worker[] workers = new Worker[numThreads];
     Thread[] threads = new Thread[numThreads];
     for (int i = 0; i < threads.length; i++) {
-      workers[i] = new Worker(threadInit, operation, syncStart, maxOperations.orElse(0L),
-            experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), numWarmupOps, i);
+      workers[i] = new Worker(args.threadInit, args.operation, syncStart, maxOperations.orElse(0L),
+            experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
       threads[i] = new Thread(workers[i]);
       threads[i].start();
     }
@@ -1190,62 +1342,6 @@ public class PerfUtils {
     perfReport.failureDistributionCounts = failureDistributionCounts;
     perfReport.uncaughtThrowableCounts = uncaughtThrowableCounts;
     return perfReport;
-  }
-
-  /**
-   * Compute throughput and latency distribution for the provided operation.
-   *
-   * See the main variation of this function for parameter documentation.
-   * In this variation the operation being benchmarked requires thread-local initiation and
-   * does not return error description objects.
-   */
-  public static PerfReport benchmarkSynchronousOperation(
-      Function<Integer, Object> threadInit,
-      Function<Object, Status> operation,
-      int numThreads,
-      Optional<Long> maxOperations,
-      Optional<Duration> maxDuration,
-      long numWarmupOps) {
-    return benchmarkSynchronousOperation(
-        threadInit,
-        (threadSpecificCustomData, ignoredBox) -> operation.apply(threadSpecificCustomData),
-        numThreads, maxOperations, maxDuration, numWarmupOps);
-  }
-
-  /**
-   * Compute throughput and latency distribution for the provided operation.
-   * See the main variation of this function for parameter documentation.
-   * In this variation the operation being benchmarked does not require thread-local initiation and
-   * returns error description objects.
-   */
-  public static PerfReport benchmarkSynchronousOperation(
-      Function<Box<Object>, Status> operation,
-      int numThreads,
-      Optional<Long> maxOperations,
-      Optional<Duration> maxDuration,
-      long numWarmupOps) {
-    return benchmarkSynchronousOperation(
-        (ignoredThreadIndex) -> new Object(),
-        (ignoredObject, errorDescriptionBox) -> operation.apply(errorDescriptionBox),
-        numThreads, maxOperations, maxDuration, numWarmupOps);
-  }
-
-  /**
-   * Compute throughput and latency distribution for the provided operation.
-   * See the main variation of this function for parameter documentation.
-   * In this variation the operation being benchmarked does not require thread-local initiation and
-   * cannot return error description objects.
-   */
-  public static PerfReport benchmarkSynchronousOperation(
-      Supplier<Status> operation,
-      int numThreads,
-      Optional<Long> maxOperations,
-      Optional<Duration> maxDuration,
-      long numWarmupOps) {
-    return benchmarkSynchronousOperation(
-        (ignoredThreadIndex) -> new Object(),
-        (ignoredObject, ignoredBox) -> operation.get(),
-        numThreads, maxOperations, maxDuration, numWarmupOps);
   }
 
   /**
