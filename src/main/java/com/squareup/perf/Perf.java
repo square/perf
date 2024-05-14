@@ -13,7 +13,7 @@ import com.squareup.perfutils.PerfUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.TreeMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -442,7 +442,7 @@ public class Perf {
    */
   static {
      // Ensure that all test names are unique and do not contain commas.
-     testNamesMap = new HashMap<>();
+     testNamesMap = new TreeMap<>();
      for (TestInfo test : tests) {
        testNamesMap.put(test.name, test);
        if (test.name.indexOf(",") != -1) {
@@ -563,8 +563,25 @@ public class Perf {
     List<TestInfo> testsToRun = new ArrayList<>();
     for (String requestedTestName : requestedTestNames) {
       if (!testNamesMap.containsKey(requestedTestName)) {
-        throw new IllegalArgumentException(
-            String.format("Test '%s' not found!", requestedTestName));
+        // Check if the the requested test name is a prefix of some test.
+        List<String> foundTestsWithPrefix = new ArrayList<>();
+        for (String testName: testNamesMap.keySet()) {
+          if (testName.startsWith(requestedTestName)) {
+            foundTestsWithPrefix.add(testName);
+          }
+        }
+
+        if (!foundTestsWithPrefix.isEmpty()) {
+          System.out.printf("Tests matching prefix '%s':\n", requestedTestName);
+          for (String testName: foundTestsWithPrefix) {
+            System.out.printf("\t%s\t%s\n", testName, testNamesMap.get(testName).description);
+          }
+        } else {
+          System.out.printf("Found no tests matching prefix '%s'.\n", requestedTestName);
+        }
+        // Since we did not have an exact match on at least one test, do not
+        // run any tests.
+        return;
       }
       testsToRun.add(testNamesMap.get(requestedTestName));
     }
