@@ -106,7 +106,7 @@ public class Perf {
         "an atomic integer."),
     // This test is used for validating that the argument overrides in TestInfo is working as expected.
     new TestInfo("NoOpThroughputShortDuration", Perf::noopTest,
-        new String[] {"-numThreads", "2", "-maxDuration", "0.5" },
+        new String[] {"-maxOperations", "null", "-numThreads", "2", "-maxDuration", "0.5" },
         "Benchmark of this benchmarking library and Java overheads."),
   };
   /**
