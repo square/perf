@@ -1399,8 +1399,22 @@ public class PerfUtils {
         } catch (NumberFormatException e) {
           throw new IllegalArgumentException(errorMessage, e);
         }
-        for (int i = lower; i <= upper; i+= step) {
-          result.add(i);
+        if (lower <= upper) {
+          // The range is ascending, so we must ensure step is positive.
+          if (step < 0) {
+            step *= -1;
+          }
+          for (int i = lower; i <= upper; i+= step) {
+            result.add(i);
+          }
+        } else {
+          // The range is descending, so we must ensure step is negative.
+          if (step > 0) {
+            step *= -1;
+          }
+          for (int i = lower; i >= upper; i += step) {
+            result.add(i);
+          }
         }
       } else {
         // This is a single number, so we ignore step if it is specified.
