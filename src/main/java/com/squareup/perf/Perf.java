@@ -142,6 +142,16 @@ public class Perf {
         "Example: 1-19,20-100:10 means thread counts from 1 to 19, 20, 30,...,100")
     public String threadRange = null;
 
+    @CommandLine.Option(names="-targetOperationsPerSecond",
+        description="The number of operations that Perf will attempt to invoke each second. " +
+        "Requires -maxThreads to also be given.")
+    public Optional<Double> targetOperationsPerSecond = Optional.empty();
+
+    @CommandLine.Option(names="-maxThreads",
+      description="The maximum number of threads that can be used to attempt to reach targetOpsPerSecond. " +
+      "Required if maxThreads is given.")
+    public Optional<Integer> maxThreads = Optional.empty();
+
     @CommandLine.Option(names="-numWarmupOps",
         description="The number of times the operation should be invoked in each thread before " +
         " the timing phase begins.")
@@ -510,12 +520,15 @@ public class Perf {
       .setNumThreads(options.numThreads)
       .setMaxOperations(options.maxOperations)
       .setMaxDuration(options.maxDuration)
-      .setNumWarmupOps(options.numWarmupOps);
+      .setNumWarmupOps(options.numWarmupOps)
+      .setTargetOpsPerSecond(options.targetOperationsPerSecond)
+      .setMaxThreads(options.maxThreads);
 
     // Run the actual benchmark.
     do {
       String threadRange = options.threadRange;
-      if (threadRange == null || threadRange.trim().isEmpty()) {
+      if (threadRange == null || threadRange.trim().isEmpty() ||
+          options.targetOperationsPerSecond.isPresent()) {
         System.out.println(PerfUtils.benchmarkSynchronousOperation(args)
             .toString(displayTimeUnit, options.verbosity));
       } else {

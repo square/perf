@@ -15,8 +15,11 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
+
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -789,6 +792,12 @@ public class PerfUtils {
     private final CyclicBarrier syncStart;
 
     /**
+     * When present, used to rate-limit this worker when running in constant
+     * arrival mode with a target QPS.
+     */
+    private Optional<Runnable> threadBlocker;
+
+    /**
      * The maximum number of times this Worker will invoke operation during the timing loop. A value
      * of 0 is equivalent to infinity.
      */
@@ -821,6 +830,7 @@ public class PerfUtils {
      * @param threadInit         See {@link #threadInit}.
      * @param operation          See {@link #operation}.
      * @param syncStart          See {@link #syncStart}.
+     * @param threadBlocker      See {@link #threadBlocker}.
      * @param maxOperations      See {@link #maxOperations}.
      * @param experimentEndNanos See {@link #experimentEndNanos}.
      * @param maxDurationNanos   See {@link #maxDurationNanos}.
@@ -831,6 +841,7 @@ public class PerfUtils {
         Function<Integer, Object> threadInit,
         BiFunction<Object, Box<Object>, Status> operation,
         CyclicBarrier syncStart,
+        Optional<Runnable> threadBlocker,
         long maxOperations,
         AtomicLong experimentEndNanos,
         long maxDurationNanos,
@@ -839,6 +850,7 @@ public class PerfUtils {
       this.threadInit = threadInit;
       this.operation = operation;
       this.syncStart = syncStart;
+      this.threadBlocker = threadBlocker;
       this.maxOperations = maxOperations;
       this.experimentEndNanos = experimentEndNanos;
       this.maxDurationNanos = maxDurationNanos;
@@ -900,14 +912,6 @@ public class PerfUtils {
         System.out.println(String.format("WARMUP END %d", id));
       }
 
-      // Wait for all other threads to be ready so all threads can start at roughly the same time.
-      try {
-        syncStart.await();
-      } catch(InterruptedException|BrokenBarrierException e) {
-        System.out.println("Interrupted in barrier, aborting.");
-        Runtime.getRuntime().halt(1);
-      }
-
       // All threads will set this, and the last thread will set the latest value.
       if (maxDurationNanos != 0) {
         experimentEndNanos.set(System.nanoTime() + maxDurationNanos);
@@ -915,9 +919,9 @@ public class PerfUtils {
         experimentEndNanos.set(Long.MAX_VALUE);
       }
 
-      // No thread can start until all threads have set the value.
-      // This second barrier exists to prevent threads from reading experimentEndNanos until the last
-      // write to it is done.
+      // This barrier exists to wait for all other threads to be ready so all
+      // threads can start at roughly the same time and also to prevent threads
+      // from reading experimentEndNanos until the last write to it is done.
       //
       // Note that the actual time that each thread starts benchmarking will always differ because
       // await() cannot wake up every thread simultaneously in the general case (when we run more
@@ -949,10 +953,15 @@ public class PerfUtils {
         System.out.println(String.format("TIMING START %d", id));
       }
       while (true) {
+        if (threadBlocker.isPresent()) {
+          threadBlocker.get().run();
+        }
+
         if (maxOperations != 0 && operationsStarted == maxOperations) {
           // We have finished all requested operations.
           break;
         }
+
         operationsStarted++;
 
         long startNanos = System.nanoTime();
@@ -1284,6 +1293,21 @@ public class PerfUtils {
       throw new IllegalArgumentException("maxOperations is only supported for numThreads == 1.");
     }
 
+    // If we are running with targetOpsPerSecond, require maxThreads so that we
+    // do not use unbounded resources. Require that there is no maxOperations.
+    if (args.targetOpsPerSecond.isPresent()) {
+      if (args.maxThreads.isEmpty()) {
+        throw new IllegalArgumentException("maxThreads is required when using targetOpsPerSecond.");
+      }
+      if (maxOperations.isPresent() && maxOperations.get() != 0) {
+        throw new IllegalArgumentException("maxOperations not supported when using targetOpsPerSecond.");
+      }
+    }
+
+    if (args.targetOpsPerSecond.isPresent() && args.maxDuration.isEmpty()) {
+      throw new IllegalArgumentException("maxDuration is required when using targetOpsPerSecond.");
+    }
+
     // Passed into each worker and set by the last worker to start up so they can synchronize on
     // when to start without having thread startup time deducted from maxDuration.
     // We could instead compute experimentEndNanos here and pass it into each worker, but then the
@@ -1293,14 +1317,100 @@ public class PerfUtils {
     AtomicLong experimentEndNanos = new AtomicLong(0);
 
     // Create workers.
-    final CyclicBarrier syncStart = new CyclicBarrier(numThreads);
-    Worker[] workers = new Worker[numThreads];
-    Thread[] threads = new Thread[numThreads];
-    for (int i = 0; i < threads.length; i++) {
-      workers[i] = new Worker(args.threadInit, args.operation, syncStart, maxOperations.orElse(0L),
-            experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
-      threads[i] = new Thread(workers[i]);
-      threads[i].start();
+    Worker[] workers;
+    Thread[] threads;
+    if (args.targetOpsPerSecond.isEmpty()) {
+      final CyclicBarrier syncStart = new CyclicBarrier(numThreads);
+      workers = new Worker[numThreads];
+      threads = new Thread[numThreads];
+      for (int i = 0; i < threads.length; i++) {
+        workers[i] = new Worker(args.threadInit, args.operation, syncStart, Optional.empty(),
+            maxOperations.orElse(0L), experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
+        threads[i] = new Thread(workers[i]);
+        threads[i].start();
+      }
+    } else {
+      // General strategy for achieving constant arrival rate:
+      // 1. All the worker threads block on getting a permit from the semaphore operationsAvailable.
+      // 2. A dispatch thread creates permits at the desired arrival rate.
+      // 3. Whichever worker is granted a permit will perform an operation and then go back to
+      //    waiting for permits.
+      //
+      // If the workers have fallen behind the dispatcher because the operation runs slowly, then
+      // the number of permits will pile up. In this scenario, workers will never block when they
+      // call operationsAvailable.acquire(), so they will run as quickly as they can, effectively
+      // performing back-to-back operations.
+
+      // We require one more thread to join the barrier, because we want the dispatch
+      // thread (which is running this code)  to participate in the barrier,
+      // and not read endNanos until every other thread has written it.
+      int maxThreads = args.maxThreads.get();
+      final CyclicBarrier syncStart = new CyclicBarrier(maxThreads + 1);
+      workers = new Worker[maxThreads];
+      threads = new Thread[maxThreads];
+
+      // Unfair semaphore is more performant
+      // We start with 0 permits so that none of the threads will start running (non-warmup)
+      // operations until the dispatch thread starts adding permits.
+      final Semaphore operationsAvailable = new Semaphore(0, false);
+      Runnable threadBlocker = () -> {
+        try {
+          operationsAvailable.acquire();
+        } catch (InterruptedException e) {
+          // Should only happen on termination.
+        }
+      };
+      for (int i = 0; i < threads.length; i++) {
+        workers[i] = new Worker(args.threadInit, args.operation, syncStart,
+            Optional.of(threadBlocker),
+            maxOperations.orElse(0L), experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
+        threads[i] = new Thread(workers[i]);
+        threads[i].start();
+      }
+      // The main thread will feeds the Semaphore until the experiment ends.
+      double targetOpsPerSecond = args.targetOpsPerSecond.get();
+      long intervalNanos = (long) (1 / targetOpsPerSecond * 1e9);
+
+      long previousTime = System.nanoTime();
+
+      // Synchronize with the worker threads before reading experimentEndNanos.
+      try {
+        syncStart.await();
+      } catch(InterruptedException|BrokenBarrierException e) {
+        System.out.println("Interrupted in barrier, aborting.");
+        Runtime.getRuntime().halt(1);
+      }
+
+      long localExpEndNanos = experimentEndNanos.get();
+      while (System.nanoTime() < localExpEndNanos) {
+        long targetTime = previousTime + intervalNanos;
+        while (System.nanoTime() < targetTime) {
+          long delta = targetTime - System.nanoTime();
+          if (delta > 100000) {
+            LockSupport.parkNanos(delta);
+          }
+          // If delta is smaller than 100 microseconds, spin loop because
+          // parkNanos has bad precision.
+        }
+        previousTime = targetTime;
+        // This condition prevents permits from increasing without bound and eventually overflowing.
+        // The multiplier 10 is chosen arbitrarily.
+        if (operationsAvailable.availablePermits() < maxThreads * 10) {
+          operationsAvailable.release();
+        }
+      }
+
+      // After the experiment ends, provide a large number of permits so all the threads can wake up
+      // and exit. We provide more than the number of threads in case System.nanoTime moved
+      // backwards for some threads.
+      //
+      // For more information on System.nanoTime moving backwards, see this post:
+      //
+      //    https://stackoverflow.com/questions/8853698/is-system-nanotime-system-nanotime-guaranteed-to-be-0
+      //
+      // On a single core, System.nanoTime is monotonically increasing. Across multiple cores, it is
+      // not guaranteed.
+      operationsAvailable.release(maxThreads * 10);
     }
 
     // Wait for all threads to finish
