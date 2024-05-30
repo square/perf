@@ -6,8 +6,10 @@ package com.squareup.perfutils;
 
 import java.nio.LongBuffer;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -312,6 +314,12 @@ public class PerfUtils {
     public List<DataPoint> dataPoints;
 
     /**
+     * A list of data points for failed requests. Separated from above since it is not used in
+     * latency calculations.
+     */
+    public List<DataPoint> failureDataPoints;
+
+    /**
      * The number of operations that finished in each {@link PerfUtils#COMPLETION_INTERVAL_SECONDS}
      * time interval from the time when the first response was received to the time when the
      * experiment termination condition was reached.
@@ -391,6 +399,12 @@ public class PerfUtils {
      *                  1: The output includes latency buckets.
      *                  2: The output includes latency buckets and the number of operations
      *                     completed in each one-second experimental interval.
+     *                  3: The output includes everything from verbosity level 2, as well as the raw
+     *                     data showing when each request started and finished, and whether it errored
+     *                     or returned successfully. If it errored, then a numeric pointer to an
+     *                     error is also provided. This can be useful for understanding failure
+     *                     duration and cause during a successover or other maintenance operation
+     *                     that causes longer downtime than expected.
      * @return A human-readable String of this PerfReport.
      */
     public String toString(TimeUnit timeUnit, int verbosity) {
@@ -536,6 +550,47 @@ public class PerfUtils {
         reportBuilder.append(
             "\nNo latency or throughput information is available because no requests completed.");
       }
+      if (verbosity > 2) {
+        // Combined failure and success data points.
+        List<DataPoint> allDataPoints = new ArrayList<>();
+        allDataPoints.addAll(dataPoints);
+        allDataPoints.addAll(failureDataPoints);
+        Collections.sort(allDataPoints, new Comparator<DataPoint>() {
+            public int compare(DataPoint a, DataPoint b) {
+            // We cannot just cast to int because long difference will overflow int.
+            long diff = a.startNanos - b.startNanos;
+            if (diff == 0) return 0;
+            return diff < 0 ? -1 : 1;
+            }
+            });
+
+        reportBuilder.append(String.format("\nIndividual data points sorted by start time:"));
+        reportBuilder.append(
+            String.format("\n\tStart Time,End Time,Duration,Failure Status"));
+        int currentErrorId = 1;
+        // Use a LinkedHashMap so that we can iterate in insertation order,
+        // resulting in the failure description id mapping being in numerically
+        // ascending order.
+        Map<Object, Integer> failureDescriptionToId = new LinkedHashMap<>();
+        for (DataPoint dp : allDataPoints) {
+          long convertedTime = timeUnit.convert(Duration.ofNanos(dp.endNanos - dp.startNanos));
+          if (dp.failureDescription == null) {
+            reportBuilder.append(String.format("\n\t%d,%d,%d,0", dp.startNanos, dp.endNanos, convertedTime));
+          } else {
+            if (!failureDescriptionToId.containsKey(dp.failureDescription)) {
+              failureDescriptionToId.put(dp.failureDescription, currentErrorId++);
+            }
+            reportBuilder.append(String.format("\n\t%d,%d,%d,%s",
+                dp.startNanos, dp.endNanos, convertedTime, failureDescriptionToId.get(dp.failureDescription)));
+          }
+        }
+        reportBuilder.append(String.format("\nFailure description id mapping:"));
+        for (Object failureDescription: failureDescriptionToId.keySet()) {
+          reportBuilder.append(String.format("\n\t(%d,%s)",
+              failureDescriptionToId.get(failureDescription), failureDescription));
+        }
+      }
+
       appendErrors(reportBuilder);
       return reportBuilder.toString();
     }
@@ -592,6 +647,25 @@ public class PerfUtils {
     public long endNanos;
 
     /**
+     * A reference to a failure description if a failure occurred. A value of null means there was
+     * no error.
+     */
+    public Object failureDescription;
+
+    /**
+     * Constructor.
+     *
+     * @param startNanos See {@link #startNanos}.
+     * @param endNanos   See {@link #endNanos}.
+     * @param failureDescription See {@link #failureDescription}.
+     */
+    public DataPoint(long startNanos, long endNanos, Object failureDescription) {
+      this.startNanos = startNanos;
+      this.endNanos = endNanos;
+      this.failureDescription = failureDescription;
+    }
+
+    /**
      * Constructor.
      *
      * @param startNanos See {@link #startNanos}.
@@ -600,6 +674,7 @@ public class PerfUtils {
     public DataPoint(long startNanos, long endNanos) {
       this.startNanos = startNanos;
       this.endNanos = endNanos;
+      this.failureDescription = null;
     }
 
     /**
@@ -754,6 +829,13 @@ public class PerfUtils {
     public LongBufferDataPointStore dataPoints;
 
     /**
+     * Data structure containing data points for failed requests. Such data points and their
+     * associated errors are useful for debugging but are not used for computing latency
+     * distributions, so they are not included in dataPoints above.
+     */
+    public List<DataPoint> failureDataPoints;
+
+    /**
      * Number of operations started by this thread.
      */
     public long operationsStarted;
@@ -881,6 +963,7 @@ public class PerfUtils {
       this.id = id;
 
       this.dataPoints = new LongBufferDataPointStore();
+      this.failureDataPoints = new ArrayList<>();
       this.operationsStarted = 0L;
       this.operationsFailed = 0L;
       this.operationsCompletedPastDeadline = 0L;
@@ -985,11 +1068,12 @@ public class PerfUtils {
 
         long startNanos = System.nanoTime();
         Status status = null;
+        String stackTrace = null;
         try {
           status = operation.apply(threadSpecificCustomData, failureStatusBox);
         } catch (Throwable t) {
           operationsFailed++;
-          String stackTrace = LoggingUtils.getStackTrace(t);
+          stackTrace = LoggingUtils.getStackTrace(t);
           if (uncaughtThrowableCounts.containsKey(stackTrace)) {
             uncaughtThrowableCounts.put(stackTrace, uncaughtThrowableCounts.get(stackTrace) + 1);
           } else {
@@ -1034,10 +1118,17 @@ public class PerfUtils {
             }
             failureStatusBox.set(null);
           }
+          // Record latency and error information separately for failure cases, so that they are
+          // available for debugging, but do not affect the hot path for successes and are not used
+          // when computing latency distributions.
+          // Note that storing a reference to failureDescription here without
+          // deduping is likely not memory-efficient, but it is assumed that
+          // errors are the uncommon case.
+          failureDataPoints.add(new DataPoint(startNanos, endNanos,
+              failureDescription == null ? "No Description": failureDescription));
         } else if (status == null) {
           // We encountered an uncaught exception above.
-          // We do not currently need any special handling for this case, but this case is included
-          // for completeness.
+          failureDataPoints.add(new DataPoint(startNanos, endNanos, stackTrace));
         }
 
         if (experimentExpired) {
@@ -1213,8 +1304,8 @@ public class PerfUtils {
   public static PerfReport buildPerfReport(List<DataPoint> dataPoints) {
     if (dataPoints.isEmpty()) {
       PerfReport perfReport = new PerfReport();
-      // This is the only field that makes sense to set when we do not have data.
       perfReport.operationsCompletedBeforeDeadline = 0;
+      perfReport.dataPoints = dataPoints;
       return perfReport;
     }
     // This set of operations requires dataPoints to be sorted by latency.
@@ -1444,6 +1535,7 @@ public class PerfUtils {
 
     // Gather output from workers
     List<DataPoint> dataPoints = new ArrayList<DataPoint>();
+    List<DataPoint> failureDataPoints = new ArrayList<DataPoint>();
     long operationsStarted = 0L;
     long operationsFailed = 0L;
     long operationsCompletedPastDeadline = 0L;
@@ -1452,7 +1544,9 @@ public class PerfUtils {
 
     for (int i = 0; i < workers.length; i++) {
       dataPoints.addAll(workers[i].dataPoints.toDataPointList());
+      failureDataPoints.addAll(workers[i].failureDataPoints);
       workers[i].dataPoints.clear();
+      workers[i].failureDataPoints.clear();
       operationsStarted += workers[i].operationsStarted;
       operationsFailed += workers[i].operationsFailed;
       operationsCompletedPastDeadline += workers[i].operationsCompletedPastDeadline;
@@ -1465,6 +1559,7 @@ public class PerfUtils {
     }
 
     PerfReport perfReport = buildPerfReport(dataPoints);
+    perfReport.failureDataPoints = failureDataPoints;
     perfReport.operationsCompletedPastDeadline = operationsCompletedPastDeadline;
     perfReport.operationsFailed = operationsFailed;
     perfReport.operationsStarted = operationsStarted;
