@@ -87,6 +87,14 @@ public class PerfUtils {
     public Optional<Integer> maxThreads;
 
     /**
+     * The benchmark will use this function to map objects describing failures
+     * to a canonical representation. This is useful for collapsing error
+     * messages that look similar but are not exactly identical, such as gRPC
+     * DEADLINE_EXCEEDED or db connection request timeouts.
+     */
+    public Function<Object, Object> failureMapper;
+
+    /**
      * Constructor. Sets default values for all arguments. Required arguments are intentionally set
      * to an invalid state.
      */
@@ -98,6 +106,7 @@ public class PerfUtils {
       this.numWarmupOps = -1;
       this.targetOpsPerSecond = Optional.empty();
       this.maxThreads = Optional.empty();
+      this.failureMapper = x -> x;
     }
 
     /**
@@ -190,8 +199,16 @@ public class PerfUtils {
     /**
      * Setter for maxThreads.
      */
-    public PerfArguments setMaxThreads (Optional<Integer> maxThreads) {
+    public PerfArguments setMaxThreads(Optional<Integer> maxThreads) {
       this.maxThreads = maxThreads;
+      return this;
+    }
+
+    /**
+     * Setter for errorMapper;
+     */
+    public PerfArguments setFailureMapper(Function<Object, Object> failureMapper) {
+      this.failureMapper = failureMapper;
       return this;
     }
   }
@@ -1439,7 +1456,7 @@ public class PerfUtils {
       operationsCompletedPastDeadline += workers[i].operationsCompletedPastDeadline;
       workers[i].failureDistributionCounts.forEach(
           (failureDescription, count) -> failureDistributionCounts.merge(
-            failureDescription, count, (count1, count2) -> count1 + count2));
+            args.failureMapper.apply(failureDescription), count, (count1, count2) -> count1 + count2));
       workers[i].uncaughtThrowableCounts.forEach(
           (uncaughtThrowable, count) -> failureDistributionCounts.merge(
             uncaughtThrowable, count, (count1, count2) -> count1 + count2));
