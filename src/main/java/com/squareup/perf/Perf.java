@@ -382,21 +382,9 @@ public class Perf {
    * Benchmark the cost of executing code in synchronized blocks when there is no contention.
    */
   public static void synchronizedTest(String[] args) {
-    class Options extends CoreOptions {
-      @CommandLine.Option(names="-format",
-          description="True means that this operation will run String.format().")
-      public boolean format = true;
-      /**
-       * Constructor. This is used to set default values of CoreOptions that the test function
-       * prefers in the absense of an override. These are overridable via TestInfo defaultArgs and
-       * the cli.
-       */
-      public Options() {
-        this.maxOperations = Optional.empty();
-        this.maxDuration = Optional.of(Duration.ofSeconds(3L));
-      }
-    }
-    Options options = new Options();
+    CoreOptions options = new CoreOptions();
+    options.maxOperations = Optional.empty();
+    options.maxDuration = Optional.of(Duration.ofSeconds(1L));
     fillOptions(options, args);
 
     final Box<Integer> vanillaInteger = new Box<Integer>(0);
