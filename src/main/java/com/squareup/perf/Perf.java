@@ -108,6 +108,9 @@ public class Perf {
     new TestInfo("NoOpThroughputShortDuration", Perf::noopTest,
         new String[] {"-maxOperations", "null", "-numThreads", "2", "-maxDuration", "0.5" },
         "Benchmark of this benchmarking library and Java overheads."),
+    // This test is used for demonstrating how failure mapping works.
+    new TestInfo("FailureMappingDemo", Perf::failureMappingDemo, null,
+        "Benchmark demonstrating how failures can be grouped."),
   };
   /**
    * Options that will be useful for most of the performance tests, because they will use
@@ -419,6 +422,41 @@ public class Perf {
     runBenchmark(atomicOperation, options, TimeUnit.NANOSECONDS);
   }
 
+  /**
+   * Benchmark demonstrating how to collapse failure description.
+   */
+  public static void failureMappingDemo(String[] args) {
+    class Options extends CoreOptions {
+      @CommandLine.Option(names="-useFailureMapper",
+          description="True means that to the test should use the failure mapper.")
+      public boolean useFailureMapper = false;
+      /**
+       * Constructor.
+       */
+      public Options() {
+        this.maxOperations = Optional.of(10000L);
+      }
+    }
+    Options options = new Options();
+    fillOptions(options, args);
+
+    PerfUtils.PerfArguments perfArgs = new PerfUtils.PerfArguments()
+        .setOperation((failureBox) -> {
+          // Randomly decide success or flavor of failure.
+          int d = ThreadLocalRandom.current().nextInt(10);
+          if (d < 5) {
+            return PerfUtils.Status.SUCCESS;
+          } else {
+            failureBox.set(String.format("Operation failed after %d seconds.", d));
+            return PerfUtils.Status.FAILURE;
+          }
+        });
+    if (options.useFailureMapper) {
+      // This is a simple failure mapper that replaces isolated integers with '?'.
+      perfArgs.setFailureMapper(x -> x.toString().replaceAll("\\b\\d+\\b", "?"));
+    }
+    runBenchmark(perfArgs, options, TimeUnit.NANOSECONDS);
+  }
 
   /**
    * A convenience mapping from test names to TestInfo objects. Given how few tests there are, it is
