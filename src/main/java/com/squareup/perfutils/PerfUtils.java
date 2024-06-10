@@ -1554,4 +1554,88 @@ public class PerfUtils {
     }
     return result;
   }
+
+  /**
+   * Utility function to expand comma-separated lists of ranges with optional steps into
+   * materialized lists of doubles. This is the equivalent of the {@link
+   * #parseRanges} for doubles. Making this a separate function sidesteps
+   * type erasure problem.
+   *
+   * @param input A string describing a range, such as 0.1-1:0.1
+   *
+   * @return The materialized lists of ranges, in the same order that the ranges were given in.
+   */
+  public static List<Double> parseDoubleRanges(String input) {
+    String errorMessage = String.format("Failed to parse range %s", input);
+    List<Double> result = new ArrayList<>();
+    if (input == null || "".equals(input)) {
+      return result;
+    }
+
+    String[] ranges;
+    if (input.indexOf(",") == -1) {
+      // This case exists only for readability, because hq6 believes many readers will not
+      // immediately know that split behaves correctly when the input does not include the
+      // delimiter.
+      ranges = new String[] {input};
+    } else {
+      ranges = input.split(",");
+    }
+    for (String range: ranges) {
+      double step = 1;
+      // A step size is specified
+      if (range.indexOf(":") != -1) {
+        String[] rangeAndStep = range.split(":");
+        if (rangeAndStep.length != 2) {
+          throw new IllegalArgumentException(errorMessage);
+        }
+        try {
+          step = Double.parseDouble(rangeAndStep[1]);
+        } catch (NumberFormatException e) {
+          throw new IllegalArgumentException(errorMessage, e);
+        }
+        range = rangeAndStep[0];
+      }
+
+      if (range.indexOf("-") != -1) {
+        // This is a range and not just a single number.
+        String[] bounds = range.split("-");
+        if (bounds.length != 2) {
+          throw new IllegalArgumentException(errorMessage);
+        }
+        double lower, upper;
+        try {
+          lower = Double.parseDouble(bounds[0]);
+          upper = Double.parseDouble(bounds[1]);
+        } catch (NumberFormatException e) {
+          throw new IllegalArgumentException(errorMessage, e);
+        }
+        if (lower <= upper) {
+          // The range is ascending, so we must ensure step is positive.
+          if (step < 0) {
+            step *= -1;
+          }
+          for (double i = lower; i <= upper; i+= step) {
+            result.add(i);
+          }
+        } else {
+          // The range is descending, so we must ensure step is negative.
+          if (step > 0) {
+            step *= -1;
+          }
+          for (double i = lower; i >= upper; i += step) {
+            result.add(i);
+          }
+        }
+      } else {
+        // This is a single number, so we ignore step if it is specified.
+        try {
+          result.add(Double.parseDouble(range));
+        } catch (NumberFormatException e) {
+          throw new IllegalArgumentException(errorMessage, e);
+        }
+      }
+    }
+    return result;
+  }
 }
