@@ -120,6 +120,12 @@ public class Perf {
    */
   @CommandLine.Command(name="perf.sh <testName>")
   static class CoreOptions {
+    @CommandLine.Option(names="-enableGracefulTermination",
+      description="When set, Control-c will cause the current experiment to output data before terminating." +
+      "Requires that maxDuration is set. " +
+      "Do not use with -threadRange, -targetOpsRange, -maxOperations, and -continuous options.")
+    public boolean enableGracefulTermination = false;
+
     @CommandLine.Option(names="-continuous",
       description="When set, run the specified test as an infinite loop. " +
       "When used without threadRange, write results to stdout whenever maxOperations or " +
@@ -547,6 +553,35 @@ public class Perf {
       System.err.println("ERROR: runBenchmark called with null operation.");
       System.exit(1);
     }
+
+    if (options.enableGracefulTermination) {
+      if (options.threadRange != null && !options.threadRange.trim().isEmpty()) {
+        System.err.println("ERROR: enableGracefulTermination incompatible with -threadRange.");
+        System.exit(1);
+      }
+      if (options.targetOpsRange.isPresent()) {
+        System.err.println("ERROR: enableGracefulTermination incompatible with -targetOpsRange.");
+        System.exit(1);
+      }
+      if (options.maxOperations.isPresent()) {
+        System.err.println("ERROR: enableGracefulTermination incompatible with -maxOperations.");
+        System.exit(1);
+      }
+      if (options.continuous) {
+        System.err.println("ERROR: enableGracefulTermination incompatible with -continuous.");
+        System.exit(1);
+      }
+
+      // Install a shutdown hook so that we can terminate early and print results.
+      final Thread mainThread = Thread.currentThread();
+      Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+          PerfUtils.terminateExperiment();
+          try {
+            mainThread.join();
+          } catch(InterruptedException e) { }
+          }));
+    }
+
     args
       .setNumThreads(options.numThreads)
       .setMaxOperations(options.maxOperations)
