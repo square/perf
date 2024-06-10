@@ -958,10 +958,6 @@ public class PerfUtils {
         Runtime.getRuntime().halt(1);
       }
 
-      // The value of experimentEndNanos will never change after the barrier above, so we cache it
-      // on the local stack to save an atomic operation.
-      long localExpEndNanos = experimentEndNanos.get();
-
       // Used for failure status description objects.
       Box<Object> failureStatusBox = new Box<Object>();
 
@@ -996,7 +992,7 @@ public class PerfUtils {
         }
         long endNanos = System.nanoTime();
 
-        boolean experimentExpired = endNanos > localExpEndNanos;
+        boolean experimentExpired = endNanos > experimentEndNanos.get();
         // Only record latency for successful operations.
         if (status == Status.SUCCESS) {
           if (!experimentExpired) {
@@ -1398,8 +1394,7 @@ public class PerfUtils {
         Runtime.getRuntime().halt(1);
       }
 
-      long localExpEndNanos = experimentEndNanos.get();
-      while (System.nanoTime() < localExpEndNanos) {
+      while (System.nanoTime() < experimentEndNanos.get()) {
         long targetTime = previousTime + intervalNanos;
         while (System.nanoTime() < targetTime) {
           long delta = targetTime - System.nanoTime();
