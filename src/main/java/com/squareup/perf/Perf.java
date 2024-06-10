@@ -152,8 +152,13 @@ public class Perf {
 
     @CommandLine.Option(names="-maxThreads",
       description="The maximum number of threads that can be used to attempt to reach targetOpsPerSecond. " +
-      "Required if maxThreads is given.")
+      "Required if targetOperationsPerSecond or targetOpsRange is given.")
     public Optional<Integer> maxThreads = Optional.empty();
+
+    @CommandLine.Option(names="-targetOpsRange",
+        description="A comma-delimited set of operations per second ranges with optional step sizes. " +
+        "Requires -maxThreads to also be given.")
+    public Optional<String> targetOpsRange = Optional.empty();
 
     @CommandLine.Option(names="-numWarmupOps",
         description="The number of times the operation should be invoked in each thread before " +
@@ -553,11 +558,8 @@ public class Perf {
     // Run the actual benchmark.
     do {
       String threadRange = options.threadRange;
-      if (threadRange == null || threadRange.trim().isEmpty() ||
-          options.targetOperationsPerSecond.isPresent()) {
-        System.out.println(PerfUtils.benchmarkSynchronousOperation(args)
-            .toString(displayTimeUnit, options.verbosity));
-      } else {
+      Optional<String> targetOpsRange = options.targetOpsRange;
+      if (threadRange != null && !threadRange.trim().isEmpty()) {
         List<Integer> threadCounts = PerfUtils.parseRanges(threadRange);
         System.out.println(
             "Threads,Min,Avg,P50,P99,P999,P9999,Max,Throughput,Completed Requests,Errors,Started Requests");
@@ -586,6 +588,37 @@ public class Perf {
             break;
           }
         }
+      } else if (targetOpsRange.isPresent()) {
+        System.out.println(
+            "TargetOps,Min,Avg,P50,P99,P999,P9999,Max,Throughput,Completed Requests,Errors,Started Requests");
+        List<Double> targetOpsList = PerfUtils.parseDoubleRanges(targetOpsRange.get());
+        for (Double targetOps: targetOpsList) {
+          PerfUtils.PerfReport perfReport =
+              PerfUtils.benchmarkSynchronousOperation(
+                  args.setTargetOpsPerSecond(Optional.of(targetOps)));
+          System.out.printf("%f,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+              targetOps,
+              displayTimeUnit.convert(perfReport.minLatency),
+              displayTimeUnit.convert(perfReport.averageLatency),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.5)),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.99)),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.999)),
+              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.9999)),
+              displayTimeUnit.convert(perfReport.maxLatency),
+              perfReport.averageOperationsCompletedPerSecond,
+              perfReport.operationsCompletedBeforeDeadline,
+              perfReport.operationsFailed,
+              perfReport.operationsStarted);
+          // This is a condition for termination chosen somewhat arbitrarily
+          // based on experimentation.
+          if (perfReport.operationsFailed > 50) {
+            System.out.println("Terminating experiment early due operationsFailed > 50");
+            break;
+          }
+        }
+      } else {
+        System.out.println(PerfUtils.benchmarkSynchronousOperation(args)
+            .toString(displayTimeUnit, options.verbosity));
       }
     } while(options.continuous);
   }
