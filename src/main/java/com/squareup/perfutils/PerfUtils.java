@@ -736,6 +736,12 @@ public class PerfUtils {
       .map(Boolean::parseBoolean).orElse(false);
 
   /**
+   * A reference to the current instance of experimentEndNanos.
+   * This should be used only for early termination.
+   */
+  private static AtomicLong experimentEndNanosGlobalRef;
+
+  /**
    * State and main function for each benchmarking thread.
    */
   private static class Worker implements Runnable {
@@ -1328,6 +1334,7 @@ public class PerfUtils {
     // large numbers of threads and sufficient small values of maxDuration, this can be substantial
     // and skew the experimental results.
     AtomicLong experimentEndNanos = new AtomicLong(0);
+    experimentEndNanosGlobalRef = experimentEndNanos;
 
     // Create workers.
     Worker[] workers;
@@ -1464,6 +1471,18 @@ public class PerfUtils {
     perfReport.failureDistributionCounts = failureDistributionCounts;
     perfReport.uncaughtThrowableCounts = uncaughtThrowableCounts;
     return perfReport;
+  }
+
+  /**
+   * Terminate the currently running invocation of runBenchmark before
+   * maxDuration is reached, and return the data that is currently available.
+   *
+   * This method is only effective for invocations of runBenchmark that use
+   * maxDuration and not maxOperations. If an experiment was started with
+   * maxOperations, calling this method will result in arbitrary behavior.
+   */
+  public static void terminateExperiment() {
+    experimentEndNanosGlobalRef.set(System.nanoTime());
   }
 
   /**
