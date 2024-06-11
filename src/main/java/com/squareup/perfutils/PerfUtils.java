@@ -320,6 +320,11 @@ public class PerfUtils {
     public List<DataPoint> failureDataPoints;
 
     /**
+     * A list of data points for requests that failed with an uncaught exception.
+     */
+    public List<DataPoint> failureDataPointsUncaughtExceptions;
+
+    /**
      * The number of operations that finished in each {@link PerfUtils#COMPLETION_INTERVAL_SECONDS}
      * time interval from the time when the first response was received to the time when the
      * experiment termination condition was reached.
@@ -555,6 +560,7 @@ public class PerfUtils {
         List<DataPoint> allDataPoints = new ArrayList<>();
         allDataPoints.addAll(dataPoints);
         allDataPoints.addAll(failureDataPoints);
+        allDataPoints.addAll(failureDataPointsUncaughtExceptions);
         Collections.sort(allDataPoints, new Comparator<DataPoint>() {
             public int compare(DataPoint a, DataPoint b) {
             // We cannot just cast to int because long difference will overflow int.
@@ -836,6 +842,17 @@ public class PerfUtils {
     public List<DataPoint> failureDataPoints;
 
     /**
+     * Data structure containing data points for requests that failed due to an uncaught exception.
+     * This is separated from failureDataPoints because failureMapper is used with failureDataPoints
+     * but not this failureDataPointsUncaughtExceptions.
+     *
+     * The design decision to separate these is to ensure that failure mapping only applies to the
+     * failures that the test writer is explicitly aware of and explicitly returns FAILURE for,
+     * rather than arbitrary uncaught exceptions.
+     */
+    public List<DataPoint> failureDataPointsUncaughtExceptions;
+
+    /**
      * Number of operations started by this thread.
      */
     public long operationsStarted;
@@ -964,6 +981,7 @@ public class PerfUtils {
 
       this.dataPoints = new LongBufferDataPointStore();
       this.failureDataPoints = new ArrayList<>();
+      this.failureDataPointsUncaughtExceptions = new ArrayList<>();
       this.operationsStarted = 0L;
       this.operationsFailed = 0L;
       this.operationsCompletedPastDeadline = 0L;
@@ -1128,7 +1146,7 @@ public class PerfUtils {
               failureDescription == null ? "No Description": failureDescription));
         } else if (status == null) {
           // We encountered an uncaught exception above.
-          failureDataPoints.add(new DataPoint(startNanos, endNanos, stackTrace));
+          failureDataPointsUncaughtExceptions.add(new DataPoint(startNanos, endNanos, stackTrace));
         }
 
         if (experimentExpired) {
@@ -1536,6 +1554,7 @@ public class PerfUtils {
     // Gather output from workers
     List<DataPoint> dataPoints = new ArrayList<DataPoint>();
     List<DataPoint> failureDataPoints = new ArrayList<DataPoint>();
+    List<DataPoint> failureDataPointsUncaughtExceptions = new ArrayList<DataPoint>();
     long operationsStarted = 0L;
     long operationsFailed = 0L;
     long operationsCompletedPastDeadline = 0L;
@@ -1544,9 +1563,15 @@ public class PerfUtils {
 
     for (int i = 0; i < workers.length; i++) {
       dataPoints.addAll(workers[i].dataPoints.toDataPointList());
-      failureDataPoints.addAll(workers[i].failureDataPoints);
+      workers[i].failureDataPoints.forEach(
+          (failureDataPoint) -> failureDataPoints.add(
+              new DataPoint(failureDataPoint.startNanos, failureDataPoint.endNanos,
+              args.failureMapper.apply(failureDataPoint.failureDescription))));
+      failureDataPointsUncaughtExceptions.addAll(workers[i].failureDataPointsUncaughtExceptions);
       workers[i].dataPoints.clear();
       workers[i].failureDataPoints.clear();
+      workers[i].failureDataPointsUncaughtExceptions.clear();
+
       operationsStarted += workers[i].operationsStarted;
       operationsFailed += workers[i].operationsFailed;
       operationsCompletedPastDeadline += workers[i].operationsCompletedPastDeadline;
@@ -1560,6 +1585,7 @@ public class PerfUtils {
 
     PerfReport perfReport = buildPerfReport(dataPoints);
     perfReport.failureDataPoints = failureDataPoints;
+    perfReport.failureDataPointsUncaughtExceptions = failureDataPointsUncaughtExceptions;
     perfReport.operationsCompletedPastDeadline = operationsCompletedPastDeadline;
     perfReport.operationsFailed = operationsFailed;
     perfReport.operationsStarted = operationsStarted;
