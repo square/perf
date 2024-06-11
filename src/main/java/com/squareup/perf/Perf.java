@@ -111,6 +111,9 @@ public class Perf {
     // This test is used for demonstrating how failure mapping works.
     new TestInfo("FailureMappingDemo", Perf::failureMappingDemo, null,
         "Benchmark demonstrating how failures can be grouped."),
+    // This test is used for validating that capturing failures works correctly.
+    new TestInfo("FailureCaptureTest", Perf::failureCaptureTest, null,
+        "Benchmark for validating correct handling of caught and uncaught exceptions."),
   };
   /**
    * Options that will be useful for most of the performance tests, because they will use
@@ -326,6 +329,9 @@ public class Perf {
       @CommandLine.Option(names="-rethrowExceptions",
           description="True means that this operation will rethrow exceptions to PerfUtils")
       public boolean rethrowExceptions = false;
+      @CommandLine.Option(names="-useFailureMapper",
+          description="True means that to the test should use the failure mapper.")
+      public boolean useFailureMapper = false;
       /**
        * Constructor. This is used to set default values of CoreOptions that the test function
        * prefers in the absense of an override. These are overridable via TestInfo defaultArgs and
@@ -341,20 +347,26 @@ public class Perf {
     Options options = new Options();
     fillOptions(options, args);
 
-    runBenchmark((failureBox) -> {
-        try {
-          if (ThreadLocalRandom.current().nextDouble() < options.failureRate) {
-            throw new RuntimeException("Handcrafted exception");
+    PerfUtils.PerfArguments perfArgs = new PerfUtils.PerfArguments()
+        .setOperation((failureBox) -> {
+          try {
+            if (ThreadLocalRandom.current().nextDouble() < options.failureRate) {
+              throw new RuntimeException("Handcrafted exception " + ThreadLocalRandom.current().nextInt(10));
+            }
+            return PerfUtils.Status.SUCCESS;
+          } catch (RuntimeException e) {
+            if (options.rethrowExceptions) {
+              throw e;
+            }
+            failureBox.set(LoggingUtils.getStackTrace(e));
+            return PerfUtils.Status.FAILURE;
           }
-          return PerfUtils.Status.SUCCESS;
-        } catch (RuntimeException e) {
-          if (options.rethrowExceptions) {
-            throw e;
-          }
-          failureBox.set(LoggingUtils.getStackTrace(e));
-          return PerfUtils.Status.FAILURE;
-        }
-      }, options, TimeUnit.NANOSECONDS);
+        });
+    if (options.useFailureMapper) {
+      // This is a simple failure mapper that replaces isolated integers with '?'.
+      perfArgs.setFailureMapper(x -> x.toString().replaceAll("\\b\\d+\\b", "?"));
+    }
+    runBenchmark(perfArgs, options, TimeUnit.NANOSECONDS);
   }
 
   /**
