@@ -1423,25 +1423,12 @@ public class PerfUtils {
       throw new IllegalArgumentException("One of maxOperations or maxDuration must be given.");
     }
 
-    // We need the maxOperations == 0 check here because we cannot give null on the command line,
-    // but we can give 0 to have this treated as null.
-    if ((maxOperations.isPresent() && maxOperations.get() != 0) && numThreads != 1) {
-      throw new IllegalArgumentException("maxOperations is only supported for numThreads == 1.");
-    }
-
     // If we are running with targetOpsPerSecond, require maxThreads so that we
-    // do not use unbounded resources. Require that there is no maxOperations.
+    // do not use unbounded resources.
     if (args.targetOpsPerSecond.isPresent()) {
       if (args.maxThreads.isEmpty()) {
         throw new IllegalArgumentException("maxThreads is required when using targetOpsPerSecond.");
       }
-      if (maxOperations.isPresent() && maxOperations.get() != 0) {
-        throw new IllegalArgumentException("maxOperations not supported when using targetOpsPerSecond.");
-      }
-    }
-
-    if (args.targetOpsPerSecond.isPresent() && args.maxDuration.isEmpty()) {
-      throw new IllegalArgumentException("maxDuration is required when using targetOpsPerSecond.");
     }
 
     // Passed into each worker and set by the last worker to start up so they can synchronize on
