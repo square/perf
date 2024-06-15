@@ -926,6 +926,12 @@ public class PerfUtils {
     private final long maxOperations;
 
     /**
+     * A global counter for operations that is only used when maxOperations is
+     * specified. It should never be used for computing any reported metrics.
+     */
+    private AtomicLong globalOperationsStarted;
+
+    /**
      * Time after which no further responses should be recorded.
      */
     private AtomicLong experimentEndNanos;
@@ -965,6 +971,7 @@ public class PerfUtils {
         CyclicBarrier syncStart,
         Optional<Runnable> threadBlocker,
         long maxOperations,
+        AtomicLong globalOperationsStarted,
         AtomicLong experimentEndNanos,
         long maxDurationNanos,
         long numWarmupOps,
@@ -974,6 +981,7 @@ public class PerfUtils {
       this.syncStart = syncStart;
       this.threadBlocker = threadBlocker;
       this.maxOperations = maxOperations;
+      this.globalOperationsStarted = globalOperationsStarted;
       this.experimentEndNanos = experimentEndNanos;
       this.maxDurationNanos = maxDurationNanos;
       this.numWarmupOps = numWarmupOps;
@@ -1077,8 +1085,8 @@ public class PerfUtils {
           threadBlocker.get().run();
         }
 
-        if (maxOperations != 0 && operationsStarted == maxOperations) {
-          // We have finished all requested operations.
+        // Note that we only expect to pay for the atomic increment if maxOperations != 0.
+        if (maxOperations != 0 && globalOperationsStarted.incrementAndGet() > maxOperations) {
           break;
         }
 
@@ -1443,6 +1451,11 @@ public class PerfUtils {
     // large numbers of threads and sufficient small values of maxDuration, this can be substantial
     // and skew the experimental results.
     AtomicLong experimentEndNanos = new AtomicLong(0);
+
+    // This is always allocated for simplicity, but it is only used when
+    // maxOperations is nonzero.
+    AtomicLong globalOperationsStarted = new AtomicLong(0);
+
     experimentEndNanosGlobalRef = experimentEndNanos;
 
     // Create workers.
@@ -1454,7 +1467,8 @@ public class PerfUtils {
       threads = new Thread[numThreads];
       for (int i = 0; i < threads.length; i++) {
         workers[i] = new Worker(args.threadInit, args.operation, syncStart, Optional.empty(),
-            maxOperations.orElse(0L), experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
+            maxOperations.orElse(0L), globalOperationsStarted, experimentEndNanos,
+            maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
         threads[i] = new Thread(workers[i]);
         threads[i].start();
       }
@@ -1492,7 +1506,8 @@ public class PerfUtils {
       for (int i = 0; i < threads.length; i++) {
         workers[i] = new Worker(args.threadInit, args.operation, syncStart,
             Optional.of(threadBlocker),
-            maxOperations.orElse(0L), experimentEndNanos, maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
+            maxOperations.orElse(0L), globalOperationsStarted, experimentEndNanos,
+            maxDuration.orElse(Duration.ZERO).toNanos(), args.numWarmupOps, i);
         threads[i] = new Thread(workers[i]);
         threads[i].start();
       }
