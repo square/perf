@@ -136,8 +136,7 @@ public class Perf {
     public boolean continuous = false;
 
     @CommandLine.Option(names="-maxOperations",
-        description="Maximum number of operations to invoke across all threads." +
-              " Only valid when numThreads == 1")
+        description="Maximum number of operations to invoke across all threads.")
     public Optional<Long> maxOperations = Optional.of(1L);
 
     @CommandLine.Option(names="-maxDuration",
