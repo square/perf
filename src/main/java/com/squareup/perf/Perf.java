@@ -13,9 +13,12 @@ import com.squareup.perfutils.PerfUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.TreeMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static picocli.CommandLine.Model.UsageMessageSpec.SECTION_KEY_OPTION_LIST;
 
 /**
  * This is the main entry point for the Perf command line tool, and it serves a
@@ -769,7 +775,63 @@ public class Perf {
     CommandLine.tracer().setLevel(CommandLine.TraceLevel.OFF);
 
     cli.parseArgs(args);
+
     if (options.help) {
+      // Make the help output more readable by grouping certain options together.
+      cli.getHelpSectionMap().put(SECTION_KEY_OPTION_LIST, new CommandLine.IHelpSectionRenderer() {
+        CommandLine.Help help;
+        Set<CommandLine.Model.OptionSpec> usedOptions;
+
+        private String renderOptionSection(String sectionName, String... optionNames) {
+          List<CommandLine.Model.OptionSpec> options = new ArrayList<>();
+          for (String optionName: optionNames) {
+            CommandLine.Model.OptionSpec optionSpec = help.commandSpec().findOption(optionName);
+            if (optionSpec != null) {
+              options.add(optionSpec);
+            }
+          }
+          return renderOptionSection(sectionName, options);
+        }
+
+        private String renderOptionSection(String sectionName, List<CommandLine.Model.OptionSpec> options) {
+          // Do not render the section at all if there are no options in it.
+          if (options.isEmpty()) {
+            return "";
+          }
+          // Sort options within each section alphabetically.
+          Collections.sort(options, help.createDefaultOptionSort());
+
+          CommandLine.Help.Layout layout = help.createDefaultLayout();
+          for (CommandLine.Model.OptionSpec optionSpec: options) {
+            layout.addOption(optionSpec, help.createDefaultParamLabelRenderer());
+            usedOptions.add(optionSpec);
+          }
+          return help.createHeading(sectionName + ":%n") + layout.toString();
+        }
+
+        public String render(CommandLine.Help help) {
+          this.help = help;
+          this.usedOptions = new HashSet<>();
+
+          String behaviorOptions = renderOptionSection("Options that control execution behavior in all modes", "-maxOperations", "-maxDuration", "-continuous", "-enableGracefulTermination", "-numWarmupOps");
+          String fixedThreadCountOptions = renderOptionSection("Options for use in fixed-thread-count mode", "-numThreads", "-threadRange");
+          String targetOpsOptions = renderOptionSection("Options for use in constant-arrival-rate mode", "-maxThreads", "-targetOperationsPerSecond", "-targetOpsRange");
+          String outputOptions = renderOptionSection("Options that control output", "-brief", "-verbosity");
+
+          // These must be rendered last because they are the options that are not in a specific category.
+          String generalOptions = renderOptionSection("General options", help.commandSpec().options().stream().filter(o -> !usedOptions.contains(o)).collect(Collectors.toList()));
+
+
+          String[] sectionsInOrder = new String[] {
+            generalOptions, behaviorOptions, fixedThreadCountOptions, targetOpsOptions, outputOptions
+          };
+          StringBuilder optionHelp = new StringBuilder();
+          for (String section: sectionsInOrder) {
+            optionHelp.append(section);
+          }
+          return optionHelp.toString();
+        }
+      });
       cli.usage(System.out);
       System.exit(0);
     }
