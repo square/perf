@@ -132,7 +132,7 @@ public class Perf {
     @CommandLine.Option(names="-enableGracefulTermination",
       description="When set, Control-c will cause the current experiment to output data before terminating." +
       "Requires that maxDuration is set. " +
-      "Do not use with -threadRange, -targetOpsRange, -maxOperations, and -continuous options.")
+      "Do not use with -threadRange, -targetOpsRange, and -continuous options.")
     public boolean enableGracefulTermination = false;
 
     @CommandLine.Option(names="-continuous",
@@ -578,10 +578,6 @@ public class Perf {
       }
       if (options.targetOpsRange.isPresent()) {
         System.err.println("ERROR: enableGracefulTermination incompatible with -targetOpsRange.");
-        System.exit(1);
-      }
-      if (options.maxOperations.isPresent()) {
-        System.err.println("ERROR: enableGracefulTermination incompatible with -maxOperations.");
         System.exit(1);
       }
       if (options.continuous) {
