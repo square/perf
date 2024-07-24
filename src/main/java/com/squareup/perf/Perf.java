@@ -129,13 +129,13 @@ public class Perf {
    */
   @CommandLine.Command(name="perf.sh <testName>")
   static class CoreOptions {
-    @CommandLine.Option(names="-enableGracefulTermination",
+    @CommandLine.Option(names="-enableGracefulTermination", arity="0..1",
       description="When set, Control-c will cause the current experiment to output data before terminating." +
       "Requires that maxDuration is set. " +
       "Do not use with -threadRange, -targetOpsRange, and -continuous options.")
     public boolean enableGracefulTermination = false;
 
-    @CommandLine.Option(names="-continuous",
+    @CommandLine.Option(names="-continuous", arity="0..1",
       description="When set, run the specified test as an infinite loop. " +
       "When used without threadRange, write results to stdout whenever maxOperations or " +
       "maxDuration is reached. Do not use in load tests that invoke runBenchmark multiple times.")
