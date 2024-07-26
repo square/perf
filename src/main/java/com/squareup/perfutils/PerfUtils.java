@@ -1512,7 +1512,9 @@ public class PerfUtils {
         Runtime.getRuntime().halt(1);
       }
 
-      while (System.nanoTime() < experimentEndNanos.get()) {
+      boolean checkMaxOperations = maxOperations.orElse(0L) != 0;
+      while (System.nanoTime() < experimentEndNanos.get() &&
+          (!checkMaxOperations || globalOperationsStarted.get() < maxOperations.get())) {
         long targetTime = previousTime + intervalNanos;
         while (System.nanoTime() < targetTime) {
           long delta = targetTime - System.nanoTime();
