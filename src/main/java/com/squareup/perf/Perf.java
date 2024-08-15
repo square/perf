@@ -644,19 +644,29 @@ public class Perf {
           PerfUtils.PerfReport perfReport =
               PerfUtils.benchmarkSynchronousOperation(
                   args.setTargetOpsPerSecond(Optional.of(targetOps)));
-          System.out.printf("%f,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
-              targetOps,
-              displayTimeUnit.convert(perfReport.minLatency),
-              displayTimeUnit.convert(perfReport.averageLatency),
-              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.5)),
-              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.99)),
-              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.999)),
-              displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.9999)),
-              displayTimeUnit.convert(perfReport.maxLatency),
-              perfReport.averageOperationsCompletedPerSecond,
-              perfReport.operationsCompletedBeforeDeadline,
-              perfReport.operationsFailed,
-              perfReport.operationsStarted);
+
+          if (perfReport.operationsCompletedBeforeDeadline > 0) {
+            System.out.printf("%f,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d\n",
+                targetOps,
+                displayTimeUnit.convert(perfReport.minLatency),
+                displayTimeUnit.convert(perfReport.averageLatency),
+                displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.5)),
+                displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.99)),
+                displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.999)),
+                displayTimeUnit.convert(perfReport.latencyPercentiles.get(0.9999)),
+                displayTimeUnit.convert(perfReport.maxLatency),
+                perfReport.averageOperationsCompletedPerSecond,
+                perfReport.operationsCompletedBeforeDeadline,
+                perfReport.operationsFailed,
+                perfReport.operationsStarted);
+          } else {
+            System.out.printf(
+                "%f,No latency or throughput information is available because no requests completed,%d,%d,%d\n",
+                targetOps,
+                perfReport.operationsCompletedBeforeDeadline,
+                perfReport.operationsFailed,
+                perfReport.operationsStarted);
+          }
           // This is a condition for termination chosen somewhat arbitrarily
           // based on experimentation.
           if (perfReport.operationsFailed > 50) {
